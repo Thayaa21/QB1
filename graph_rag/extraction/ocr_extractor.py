@@ -95,89 +95,185 @@ def _regex_extract(text: str) -> dict[str, str]:
     Fast rule-based extraction using regex patterns.
     No LLM needed — pure Python pattern matching.
 
-    Returns dict of {field_name: value} for fields that matched.
+    Handles multi-line OCR artifacts (names split across lines),
+    and driver's license specific fields like height, weight, eye color.
     """
     fields: dict[str, str] = {}
-    text_lower = text.lower()
+
+    # ---- Normalize text for easier matching ----
+    # Join lines that look like they're part of the same field
+    # (OCR often splits names across 2 lines)
+    clean_lines = [l.strip() for l in text.split("\n") if l.strip()]
+    clean_text  = " ".join(clean_lines)  # single line for regex
+
+    # ---- Full Name ----
+    # Handles: "LN KANAG FN THAYAANANTHAN", "LAST FIRST MIDDLE", "Name: John Smith"
+    name_patterns = [
+        r"(?:full name|name)[:\s]+([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+){1,4})",
+        # Driver license format: "LN SURNAME FN FIRSTNAME"
+        r"LN\s+([A-Z]+)\s+FN\s+([A-Z]+)",
+        # ALL CAPS name (passport / license machine readable)
+        r"(?:^|\n)([A-Z]{2,}\s+[A-Z]{2,}(?:\s+[A-Z]{2,})?)\s*(?:\n|$)",
+        # "SURNAME, FIRSTNAME" format
+        r"([A-Z][A-Z\s]+),\s*([A-Z][A-Z\s]+)",
+    ]
+    for pat in name_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE | re.MULTILINE)
+        if m:
+            if m.lastindex and m.lastindex >= 2:
+                # LN/FN or LAST/FIRST format — combine
+                parts = [g for g in m.groups() if g]
+                name  = " ".join(p.strip().title() for p in parts)
+            else:
+                name = m.group(1).strip().title()
+            # Filter out known non-name all-caps labels
+            skip_words = {"CLASS", "DONOR", "STATE", "EXPIRES", "ISSUED", "LICENSE",
+                          "DRIVER", "IDENTIFICATION", "ARIZONA", "CANADA", "PASSPORT"}
+            if not any(w in name.upper() for w in skip_words) and len(name) > 3:
+                fields["name"] = name
+                break
 
     # ---- Date of Birth ----
     dob_patterns = [
-        r"(?:date of birth|dob|birth date|born)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})",
+        r"(?:date of birth|dob|birth date|born|DOB)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})",
         r"(?:date of birth|dob|birth date|born)[:\s]+([A-Z][a-z]+ [0-9]{1,2},? [0-9]{4})",
         r"(?:date of birth|dob)[:\s]+([0-9]{4}[\/\-][0-9]{1,2}[\/\-][0-9]{1,2})",
+        # Driver license: "DOB 01/03/2003" or standalone date after DOB label
+        r"DOB\s+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})",
     ]
     for pat in dob_patterns:
-        m = re.search(pat, text, re.IGNORECASE)
+        m = re.search(pat, clean_text, re.IGNORECASE)
         if m:
             fields["dob"] = m.group(1).strip()
             break
 
-    # ---- Full Name ----
-    name_patterns = [
-        r"(?:full name|name|surname.*given)[:\s]+([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})",
-        r"(?:full name|name)[:\s]+([A-Z][A-Z ]+)",  # ALL CAPS passports
-    ]
-    for pat in name_patterns:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            fields["name"] = m.group(1).strip().title()
-            break
-
     # ---- Passport Number ----
-    m = re.search(
-        r"(?:passport\s*(?:no|number|#)?)[:\s]*([A-Z]{1,2}[0-9]{6,9})",
-        text, re.IGNORECASE
-    )
+    m = re.search(r"(?:passport\s*(?:no|number|#)?)[:\s]*([A-Z]{1,2}[0-9]{6,9})",
+                  clean_text, re.IGNORECASE)
     if m:
         fields["passport_number"] = m.group(1).strip().upper()
 
     # ---- License Number ----
-    m = re.search(
-        r"(?:licence|license)\s*(?:no|number|#)?[:\s]*([A-Z0-9\-]{5,15})",
-        text, re.IGNORECASE
-    )
-    if m:
-        fields["license_number"] = m.group(1).strip().upper()
+    # Arizona format: letter + 8 digits e.g. U10112277
+    lic_patterns = [
+        r"(?:licence|license|lic(?:ense)?\.?(?:\s*no)?)[:\s#]*([A-Z][0-9]{7,9})",
+        r"\b([A-Z][0-9]{7,9})\b",   # standalone like U10112277
+    ]
+    for pat in lic_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE)
+        if m:
+            fields["license_number"] = m.group(1).strip().upper()
+            break
+
+    # ---- Issue Date ----
+    iss_patterns = [
+        r"(?:issue\s*date|issued|iss)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})",
+        r"ISS\s+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})",
+    ]
+    for pat in iss_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE)
+        if m:
+            fields["issue_date"] = m.group(1).strip()
+            break
 
     # ---- Expiry Date ----
-    m = re.search(
-        r"(?:expiry|expiration|date of expiry|valid until|expires?)[:\s]*"
-        r"([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}"
-        r"|[A-Z][a-z]+ [0-9]{1,2},? [0-9]{4})",
-        text, re.IGNORECASE
-    )
-    if m:
-        fields["expiry_date"] = m.group(1).strip()
-
-    # ---- Nationality ----
-    m = re.search(r"(?:nationality|citizenship)[:\s]+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)", text, re.IGNORECASE)
-    if m:
-        fields["nationality"] = m.group(1).strip()
-
-    # ---- Place of birth ----
-    m = re.search(r"(?:place of birth|pob)[:\s]+([A-Z][a-zA-Z\s,]+)", text, re.IGNORECASE)
-    if m:
-        fields["place_of_birth"] = m.group(1).strip()
+    exp_patterns = [
+        r"(?:expiry|expiration|date of expiry|valid until|exp(?:ires?)?)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})",
+        r"EXP\s+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})",
+    ]
+    for pat in exp_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE)
+        if m:
+            fields["expiry_date"] = m.group(1).strip()
+            break
 
     # ---- Address ----
     m = re.search(
-        r"(?:address|addr)[:\s]+(.{10,80}(?:street|st|avenue|ave|road|rd|drive|dr|"
-        r"crescent|blvd|boulevard|way|lane|ln)[^,\n]*(?:,\s*[^\n]{3,40})?)",
-        text, re.IGNORECASE
+        r"(?:address|addr)[:\s]+(.{10,100}(?:[A-Z]{2}\s+\d{5}(?:-\d{4})?))",
+        clean_text, re.IGNORECASE
     )
+    if not m:
+        # Try: any line with a US zip code pattern
+        m = re.search(r"([A-Z][a-zA-Z\s,]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?)", clean_text)
     if m:
         fields["address"] = m.group(1).strip()
 
-    # ---- MRZ (Machine Readable Zone on passports) — very reliable ----
-    # MRZ line format: P<COUNTRYNAME<<GIVEN<<NAMES<<<...
-    mrz_match = re.search(r"P<([A-Z]{3})([A-Z<]+)", text)
-    if mrz_match and "name" not in fields:
-        country = mrz_match.group(1)
-        name_part = mrz_match.group(2).replace("<", " ").strip()
-        if name_part:
-            fields["name"] = name_part.title()
-        if "nationality" not in fields:
-            fields["nationality"] = country
+    # ---- Sex / Gender ----
+    m = re.search(r"(?:sex|gender)[:\s]+([MF](?:ale|emale)?)\b", clean_text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\bSEX\s+([MF])\b", clean_text)
+    if m:
+        val = m.group(1).strip().upper()
+        fields["sex"] = "Male" if val.startswith("M") else "Female"
+
+    # ---- Height ----
+    # Formats: "6'4"", "6-04", "HGT 604", "6 ft 4 in"
+    ht_patterns = [
+        r"(?:hgt|height|ht)[:\s]+([0-9]['`]?\s*[0-9]{1,2}[\"'`]?(?:\s*in)?)",
+        r"(?:hgt|height)[:\s]+([0-9]\-[0-9]{2})",  # 6-04 format
+        r"\bHGT\s+([0-9]{3})\b",                    # HGT 604 → 6'04"
+    ]
+    for pat in ht_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE)
+        if m:
+            ht = m.group(1).strip()
+            # Normalize "604" → "6'04"", "6-04" → "6'04""
+            if re.match(r"^[0-9]{3}$", ht):
+                ht = f"{ht[0]}'{ht[1:]}\""
+            elif re.match(r"^[0-9]-[0-9]{2}$", ht):
+                ht = f"{ht[0]}'{ht[2:]}\""
+            fields["height"] = ht
+            break
+
+    # ---- Weight ----
+    wt_patterns = [
+        r"(?:wgt|weight|wt)[:\s]+([0-9]{2,3}\s*(?:lbs?|kg)?)",
+        r"\bWGT\s+([0-9]{2,3})\b",
+    ]
+    for pat in wt_patterns:
+        m = re.search(pat, clean_text, re.IGNORECASE)
+        if m:
+            wt = m.group(1).strip()
+            if not re.search(r"lbs?|kg", wt, re.I):
+                wt += " lbs"
+            fields["weight"] = wt
+            break
+
+    # ---- Eye Color ----
+    m = re.search(r"(?:eyes?|eye\s*color|eye\s*colour|eyz?)[:\s]+([A-Z]{3,8})\b",
+                  clean_text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\b(BRN|BLU|GRN|HAZ|GRY|BLK|AMB)\b", clean_text)
+    if m:
+        color_map = {"BRN": "BROWN", "BLU": "BLUE", "GRN": "GREEN",
+                     "HAZ": "HAZEL", "GRY": "GRAY",  "BLK": "BLACK", "AMB": "AMBER"}
+        val = m.group(1).upper()
+        fields["eye_color"] = color_map.get(val, val.title())
+
+    # ---- Vehicle Class ----
+    m = re.search(r"(?:class|vehicle\s*class|lic\s*class)[:\s]+([A-Z])\b",
+                  clean_text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\bCLASS\s+([A-Z])\b", clean_text)
+    if m:
+        fields["class"] = m.group(1).upper()
+
+    # ---- State / Province abbreviation ----
+    m = re.search(r"\b(AZ|CA|NY|TX|FL|BC|ON|AB|QC)\b", clean_text)
+    if m:
+        fields["state_abbreviation"] = m.group(1)
+
+    # ---- Nationality (passports) ----
+    m = re.search(r"(?:nationality|citizenship)[:\s]+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)",
+                  clean_text, re.IGNORECASE)
+    if m:
+        fields["nationality"] = m.group(1).strip()
+
+    # ---- Place of birth (passports) ----
+    m = re.search(r"(?:place of birth|pob|birthplace)[:\s]+([A-Z][a-zA-Z\s,]+)",
+                  clean_text, re.IGNORECASE)
+    if m:
+        fields["place_of_birth"] = m.group(1).strip()
 
     return fields
 
@@ -187,19 +283,22 @@ def _regex_extract(text: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 _VERIFY_PROMPT = """\
-You are a document verification assistant.
+You are a document verification assistant for identity documents.
 
 Below is:
 1. RAW OCR TEXT from a scanned document
 2. FIELDS already extracted by a regex parser
 
-Your task: Review the extracted fields and CORRECT any errors.
-Return ONLY a JSON object with the corrected field values.
-Keep fields that look correct. Fix obvious OCR errors (0→O, 1→l, etc.).
-Add any clearly visible fields that were missed.
-Do NOT hallucinate — only use information visible in the OCR text.
+Your task:
+- Review the extracted fields and CORRECT errors
+- Fix OCR artifacts: 0→O, 1→l, broken names across lines, etc.
+- For NAMES: combine multi-line OCR names (e.g. "KANAG THAYAANA" + "NTHAN" → "Kanag Thayaananthan")
+- For HEIGHT: normalize to feet/inches (e.g. "604" → "6'04\\"", "6-04" → "6'04\\"")
+- For dates: use MM/DD/YYYY format as it appears on the document
+- Do NOT hallucinate — only use information visible in the OCR text
+- Return ONLY a JSON object, no explanation
 
-OCR TEXT:
+OCR TEXT (first 1500 chars):
 {ocr_text}
 
 REGEX-EXTRACTED FIELDS:
@@ -207,8 +306,7 @@ REGEX-EXTRACTED FIELDS:
 
 DOCUMENT TYPE: {doc_type}
 
-Return JSON only (no explanation):
-{{"name": "...", "dob": "...", ...}}"""
+JSON only:"""
 
 
 # ---------------------------------------------------------------------------
