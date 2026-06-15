@@ -1,0 +1,22 @@
+# Environment variables (API keys — never commit)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node / React (when we build the frontend)
+node_modules/
+frontend/dist/
+frontend/.env
+
+# Generated files
+graph.html
+*.html

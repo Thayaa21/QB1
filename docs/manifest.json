@@ -1,0 +1,552 @@
+[
+  {
+    "name": "Fatima Yamamoto",
+    "dob": "1994-02-28",
+    "folder": "fatima_yamamoto",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1994-02-01 vs actual DOB=1994-02-28",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "ON-1973699",
+      "passport_number": null,
+      "policy_number": "INS-2020-181756",
+      "bc_registration": "BC-1994-3214688"
+    }
+  },
+  {
+    "name": "William Johnson",
+    "dob": "1988-11-30",
+    "folder": "william_johnson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-85993425",
+      "policy_number": null,
+      "bc_registration": "BC-1988-7108914"
+    }
+  },
+  {
+    "name": "Lucas Ali",
+    "dob": "1986-10-11",
+    "folder": "lucas_ali",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport"
+    ],
+    "ids": {
+      "license_number": "MB-4606846",
+      "passport_number": "CA-84165679",
+      "policy_number": null,
+      "bc_registration": "BC-1986-0036839"
+    }
+  },
+  {
+    "name": "Emily Patel",
+    "dob": "1990-09-13",
+    "folder": "emily_patel",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": null,
+      "policy_number": "INS-2016-692817",
+      "bc_registration": "BC-1990-3901236"
+    }
+  },
+  {
+    "name": "Aisha Walker",
+    "dob": "1993-09-19",
+    "folder": "aisha_walker",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1993-09-20 vs actual DOB=1993-09-19",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "ON-5109578",
+      "passport_number": "CA-77104092",
+      "policy_number": "INS-2018-213455",
+      "bc_registration": "BC-1993-6127729"
+    }
+  },
+  {
+    "name": "Mei Lee",
+    "dob": "1982-01-31",
+    "folder": "mei_lee",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-63408530",
+      "policy_number": "INS-2018-812432",
+      "bc_registration": "BC-1982-8420885"
+    }
+  },
+  {
+    "name": "Amara Johnson",
+    "dob": "1986-04-06",
+    "folder": "amara_johnson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "BC-9644922",
+      "passport_number": null,
+      "policy_number": "INS-2022-249957",
+      "bc_registration": "BC-1986-6353421"
+    }
+  },
+  {
+    "name": "Sarah Jackson",
+    "dob": "1978-11-20",
+    "folder": "sarah_jackson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-97675672",
+      "policy_number": null,
+      "bc_registration": "BC-1978-5628492"
+    }
+  },
+  {
+    "name": "James Wilson",
+    "dob": "1975-10-17",
+    "folder": "james_wilson",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1975-10-18 vs actual DOB=1975-10-17",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport"
+    ],
+    "ids": {
+      "license_number": "QC-1364667",
+      "passport_number": "CA-75394098",
+      "policy_number": null,
+      "bc_registration": "BC-1975-1294740"
+    }
+  },
+  {
+    "name": "Zara Kim",
+    "dob": "1989-10-25",
+    "folder": "zara_kim",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": null,
+      "policy_number": "INS-2020-038749",
+      "bc_registration": "BC-1989-5023458"
+    }
+  },
+  {
+    "name": "Hassan Kim",
+    "dob": "1992-07-28",
+    "folder": "hassan_kim",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "AB-0294457",
+      "passport_number": "CA-59958896",
+      "policy_number": "INS-2015-034476",
+      "bc_registration": "BC-1992-6544809"
+    }
+  },
+  {
+    "name": "James Smith",
+    "dob": "1971-01-17",
+    "folder": "james_smith",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-09730943",
+      "policy_number": "INS-2017-051315",
+      "bc_registration": "BC-1971-2634152"
+    }
+  },
+  {
+    "name": "William Yamamoto",
+    "dob": "1988-10-18",
+    "folder": "william_yamamoto",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1988-10-19 vs actual DOB=1988-10-18",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "ON-3434455",
+      "passport_number": null,
+      "policy_number": "INS-2016-253585",
+      "bc_registration": "BC-1988-2972148"
+    }
+  },
+  {
+    "name": "Hassan Anderson",
+    "dob": "1998-05-08",
+    "folder": "hassan_anderson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-41621349",
+      "policy_number": null,
+      "bc_registration": "BC-1998-2408661"
+    }
+  },
+  {
+    "name": "Sarah Brown",
+    "dob": "1997-09-11",
+    "folder": "sarah_brown",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport"
+    ],
+    "ids": {
+      "license_number": "BC-3826641",
+      "passport_number": "CA-57070108",
+      "policy_number": null,
+      "bc_registration": "BC-1997-6523298"
+    }
+  },
+  {
+    "name": "Mei Singh",
+    "dob": "1976-02-04",
+    "folder": "mei_singh",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": null,
+      "policy_number": "INS-2015-075645",
+      "bc_registration": "BC-1976-6480714"
+    }
+  },
+  {
+    "name": "Mei Johnson",
+    "dob": "1972-06-26",
+    "folder": "mei_johnson",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1972-06-27 vs actual DOB=1972-06-26",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "QC-7851185",
+      "passport_number": "CA-02058844",
+      "policy_number": "INS-2021-748404",
+      "bc_registration": "BC-1972-6845623"
+    }
+  },
+  {
+    "name": "Sofia Nguyen",
+    "dob": "1994-06-20",
+    "folder": "sofia_nguyen",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-08719171",
+      "policy_number": "INS-2019-503671",
+      "bc_registration": "BC-1994-4613247"
+    }
+  },
+  {
+    "name": "Chloe Santos",
+    "dob": "1975-09-02",
+    "folder": "chloe_santos",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "AB-9945682",
+      "passport_number": null,
+      "policy_number": "INS-2019-852009",
+      "bc_registration": "BC-1975-5930671"
+    }
+  },
+  {
+    "name": "Zara Thomas",
+    "dob": "1972-07-03",
+    "folder": "zara_thomas",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-60257804",
+      "policy_number": null,
+      "bc_registration": "BC-1972-9824941"
+    }
+  },
+  {
+    "name": "Ethan Petrov",
+    "dob": "1996-11-24",
+    "folder": "ethan_petrov",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1996-11-25 vs actual DOB=1996-11-24",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport"
+    ],
+    "ids": {
+      "license_number": "AB-7791972",
+      "passport_number": "CA-96800624",
+      "policy_number": null,
+      "bc_registration": "BC-1996-5801178"
+    }
+  },
+  {
+    "name": "Liam Anderson",
+    "dob": "1975-07-31",
+    "folder": "liam_anderson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": null,
+      "policy_number": "INS-2020-509830",
+      "bc_registration": "BC-1975-0391374"
+    }
+  },
+  {
+    "name": "David Patel",
+    "dob": "1983-04-12",
+    "folder": "david_patel",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "AB-9836851",
+      "passport_number": "CA-17608332",
+      "policy_number": "INS-2023-027261",
+      "bc_registration": "BC-1983-9822469"
+    }
+  },
+  {
+    "name": "Michael Anderson",
+    "dob": "1976-07-12",
+    "folder": "michael_anderson",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-13889648",
+      "policy_number": "INS-2023-765685",
+      "bc_registration": "BC-1976-5547484"
+    }
+  },
+  {
+    "name": "Ingrid White",
+    "dob": "1984-04-25",
+    "folder": "ingrid_white",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1984-04-26 vs actual DOB=1984-04-25",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "NS-7811715",
+      "passport_number": null,
+      "policy_number": "INS-2023-862187",
+      "bc_registration": "BC-1984-7552055"
+    }
+  },
+  {
+    "name": "Lucas Garcia",
+    "dob": "1981-07-22",
+    "folder": "lucas_garcia",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-22757301",
+      "policy_number": null,
+      "bc_registration": "BC-1981-9512620"
+    }
+  },
+  {
+    "name": "Ravi Okonkwo",
+    "dob": "1986-03-24",
+    "folder": "ravi_okonkwo",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport"
+    ],
+    "ids": {
+      "license_number": "AB-4882450",
+      "passport_number": "CA-35786479",
+      "policy_number": null,
+      "bc_registration": "BC-1986-8842157"
+    }
+  },
+  {
+    "name": "Nathan Walker",
+    "dob": "1992-06-26",
+    "folder": "nathan_walker",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": null,
+      "policy_number": "INS-2020-716693",
+      "bc_registration": "BC-1992-7284129"
+    }
+  },
+  {
+    "name": "Alice Harris",
+    "dob": "1972-02-21",
+    "folder": "alice_harris",
+    "contradiction": true,
+    "contradiction_detail": "Insurance DOB=1972-02-22 vs actual DOB=1972-02-21",
+    "documents": [
+      "birth_certificate",
+      "drivers_license",
+      "passport",
+      "insurance"
+    ],
+    "ids": {
+      "license_number": "AB-0246587",
+      "passport_number": "CA-62774877",
+      "policy_number": "INS-2018-656040",
+      "bc_registration": "BC-1972-6778276"
+    }
+  },
+  {
+    "name": "Emily Martinez",
+    "dob": "1987-11-26",
+    "folder": "emily_martinez",
+    "contradiction": false,
+    "contradiction_detail": null,
+    "documents": [
+      "birth_certificate",
+      "passport",
+      "insurance",
+      "medical_record"
+    ],
+    "ids": {
+      "license_number": null,
+      "passport_number": "CA-06463227",
+      "policy_number": "INS-2023-527338",
+      "bc_registration": "BC-1987-9158263"
+    }
+  }
+]
