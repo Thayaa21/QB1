@@ -209,20 +209,21 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
               </button>
             </div>
           : conflicts.map((c, i) => (
-            <div key={i} style={S.conflictCard(c.severity)}>
+            <div key={i} style={S.conflictCard(c.severity)} onClick={() => toggleCard(i)}>
               <div style={S.conflictTitle}>
                 <span style={S.badge(c.severity === 'critical' ? '#E74C3C' : '#E67E22')}>
                   {c.severity.toUpperCase()}
                 </span>
-                {c.conflict_type.replace('_', ' ')} — <span style={{ color: '#4A90D9' }}>{c.attribute_key}</span>
+                {c.conflict_type.replace(/_/g, ' ')} — <span style={{ color: '#4A90D9' }}>{c.attribute_key}</span>
+                <span style={{ float: 'right', color: '#555', fontSize: '11px' }}>{expandedCards.has(i) ? '▲ collapse' : '▼ details'}</span>
               </div>
 
+              {/* Always-visible: the conflicting values */}
               <div style={S.conflictRow}>
-                {/* Side A */}
                 <div style={S.conflictSide('#4A90D9')}>
                   <div style={S.sideTitle}>
                     <span style={{ ...S.memberName, fontSize: '12px' }}
-                          onClick={() => openEntity(c.entity_a.entity_id)}>
+                          onClick={e => { e.stopPropagation(); openEntity(c.entity_a.entity_id); }}>
                       👤 {c.entity_a.name}
                     </span>
                   </div>
@@ -233,11 +234,10 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
                   )}
                 </div>
 
-                {/* Side B */}
                 <div style={S.conflictSide('#E74C3C')}>
                   <div style={S.sideTitle}>
                     <span style={{ ...S.memberName, fontSize: '12px' }}
-                          onClick={() => openEntity(c.entity_b.entity_id)}>
+                          onClick={e => { e.stopPropagation(); openEntity(c.entity_b.entity_id); }}>
                       👤 {c.entity_b.name}
                     </span>
                   </div>
@@ -248,6 +248,58 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
                   )}
                 </div>
               </div>
+
+              {/* Expanded: full attribute comparison */}
+              {expandedCards.has(i) && (
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px', fontWeight: 700 }}>
+                    📊 Full Attribute Comparison
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 1fr', gap: '2px', fontSize: '11px' }}>
+                    <div style={{ color: '#555', fontWeight: 700, padding: '3px' }}>Field</div>
+                    <div style={{ color: '#4A90D9', fontWeight: 700, padding: '3px' }}>📄 {c.entity_a.source_file}</div>
+                    <div style={{ color: '#E74C3C', fontWeight: 700, padding: '3px' }}>📄 {c.entity_b.source_file}</div>
+                    {/* Show all fields from both entities */}
+                    {Array.from(new Set([
+                      ...Object.keys(c.entity_a.attributes || {}),
+                      ...Object.keys(c.entity_b.attributes || {}),
+                    ])).filter(k => !k.startsWith('_')).map(field => {
+                      const va = (c.entity_a.attributes || {})[field] || '—';
+                      const vb = (c.entity_b.attributes || {})[field] || '—';
+                      const isConflict = field === c.attribute_key;
+                      return (
+                        <React.Fragment key={field}>
+                          <div style={{ padding: '3px', color: isConflict ? '#E67E22' : '#666',
+                                        fontWeight: isConflict ? 700 : 400,
+                                        borderBottom: '1px solid #1a1a2e' }}>
+                            {field}
+                          </div>
+                          <div style={{ padding: '3px', color: isConflict ? '#fff' : '#aaa',
+                                        background: isConflict ? '#0d1a2e' : 'transparent',
+                                        borderBottom: '1px solid #1a1a2e' }}>
+                            {va}
+                          </div>
+                          <div style={{ padding: '3px', color: isConflict ? '#fff' : '#aaa',
+                                        background: isConflict ? '#1a0d0d' : 'transparent',
+                                        borderBottom: '1px solid #1a1a2e' }}>
+                            {vb}
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
+                    <button style={{ padding: '4px 10px', background: '#4A90D9', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                            onClick={e => { e.stopPropagation(); openEntity(c.entity_a.entity_id); }}>
+                      View {c.entity_a.name} full profile
+                    </button>
+                    <button style={{ padding: '4px 10px', background: '#E74C3C', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                            onClick={e => { e.stopPropagation(); openEntity(c.entity_b.entity_id); }}>
+                      View {c.entity_b.name} full profile
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))
       )}

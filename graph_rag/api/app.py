@@ -445,8 +445,10 @@ def smart_query_endpoint(request: QueryRequest):
     # ---- Handle open-ended questions (no specific person) ----
     open_ended_keywords = ["how many", "list", "all", "count", "every", "total",
                            "which", "what documents", "what licenses", "show all",
-                           "household", "same address", "who lives"]
-    is_open_ended = any(kw in question for kw in open_ended_keywords) and not names
+                           "household", "same address", "who lives", "entities",
+                           "people", "persons", "records", "documents", "files"]
+    # Also treat as open-ended if no person names were found
+    is_open_ended = (any(kw in question for kw in open_ended_keywords) or not names)
 
     if is_open_ended:
         # Aggregate answer across all entities
@@ -472,28 +474,26 @@ def smart_query_endpoint(request: QueryRequest):
                 summary_lines.append(f"• **{name}** ({doc_t}, {src}): {', '.join(relevant_facts)}")
 
         if not summary_lines:
-            # Generic summary
+            # Generic summary — list everyone
             for nid, data in all_entity_nodes:
-                name = data.get("name", "Unknown")
+                name  = data.get("name", "Unknown")
                 doc_t = data.get("doc_type", "")
                 src   = data.get("source_filename", "")
                 summary_lines.append(f"• {name} — {doc_t} ({src})")
 
-        try:
-            summary_prompt = (
-                f"Answer this question based on the data below.\n"
-                f"Question: {request.question}\n\n"
-                f"Data:\n" + "\n".join(summary_lines[:20])
-            )
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(llm.complete, summary_prompt, 0.0)
-                try:
-                    answer = future.result(timeout=12)
-                except concurrent.futures.TimeoutError:
-                    raise Exception("timeout")
-        except Exception:
-            answer = f"Found {len(all_entity_nodes)} entities in the graph:\n" + "\n".join(summary_lines[:10])
+        # Build answer directly without LLM (fast, no timeout risk)
+        total = len(all_entity_nodes)
+        unique_names = list(dict.fromkeys(data.get("name","") for _, data in all_entity_nodes))
+        doc_types = {}
+        for _, data in all_entity_nodes:
+            dt = data.get("doc_type", "GENERIC")
+            doc_types[dt] = doc_types.get(dt, 0) + 1
+
+        answer_parts = [f"Graph contains {total} entity records from {len(unique_names)} unique people."]
+        answer_parts.append("Document types: " + ", ".join(f"{v}× {k}" for k, v in doc_types.items()))
+        if summary_lines:
+            answer_parts.append("\nDetails:\n" + "\n".join(summary_lines[:15]))
+        answer = "\n".join(answer_parts)
 
         return {
             "type":     "summary",
