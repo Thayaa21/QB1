@@ -114,8 +114,8 @@ class EntityResolver:
         self,
         llm_provider: LLMProvider,
         embedding_engine: EmbeddingEngine,
-        auto_threshold: float = 0.85,
-        confirm_threshold: float = 0.60,
+        auto_threshold: float = 0.75,    # lowered from 0.85 — same name + moderate semantic = same person
+        confirm_threshold: float = 0.55, # lowered from 0.60
     ):
         """
         Args:

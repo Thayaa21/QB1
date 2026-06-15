@@ -45,6 +45,20 @@ Endpoints:
 import logging
 import os
 from pathlib import Path
+
+# Load .env file on startup so all os.getenv() calls work correctly
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent.parent / ".env")
+except ImportError:
+    # dotenv not installed — load .env manually
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
