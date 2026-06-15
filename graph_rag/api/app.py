@@ -955,3 +955,219 @@ def get_person_info(person_name: str):
         "conflicts":    conflicts,
         "resolved":     len(links) > 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# DUAL EXTRACTION — same file → UiPath + LangChain/OCR simultaneously
+# ---------------------------------------------------------------------------
+
+def _check_person_exists(person_name: str) -> dict:
+    """
+    Check if a person with a similar name already exists in the graph.
+    Returns match info.
+    """
+    graph = _graph_builder.get_graph()
+    name_lower = person_name.lower().replace("_", " ")
+    matches = []
+
+    for node_id, data in graph.nodes(data=True):
+        if data.get("node_type") != "entity":
+            continue
+        existing_name = data.get("name", "").lower()
+        attrs = data.get("attributes", {}) or {}
+        folder = attrs.get("_person_folder", "")
+
+        # Check name similarity
+        if (name_lower in existing_name or existing_name in name_lower
+                or folder == person_name):
+            matches.append({
+                "node_id":       node_id[:8],
+                "name":          data.get("name"),
+                "doc_type":      data.get("doc_type"),
+                "source_file":   data.get("source_filename"),
+                "person_folder": folder,
+            })
+
+    return {
+        "exists":  len(matches) > 0,
+        "matches": matches,
+        "count":   len(matches),
+    }
+
+
+@app.post("/person/dual-extract")
+async def dual_extract(
+    file:        UploadFile = File(...),
+    person_name: str        = "thayaananthan_kanagaraj",
+):
+    """
+    Extract a document using BOTH UiPath API and LangChain OCR+LLM simultaneously.
+    Returns both results for comparison and ingests both into the graph.
+
+    Also checks if this person already exists in the graph.
+
+    Args:
+        file        — image (JPG, PNG) or PDF
+        person_name — folder name under docs/people/
+
+    Returns:
+        {
+          "already_exists": {...},     ← duplicate check
+          "uipath_result":  {...},     ← UiPath extraction
+          "langchain_result": {...},   ← OCR + LLM verification
+          "agreement": {...},          ← which fields both agree on
+          "conflicts": [...],          ← which fields disagree
+          "saved_to": "docs/people/thayaananthan_kanagaraj/",
+          "graph_stats": {...}
+        }
+    """
+    import re as _re
+    import json as _json
+
+    # Sanitize name
+    person_name = _re.sub(r"[^a-z0-9_]", "_", person_name.lower().strip())
+    person_dir  = Path("docs") / "people" / person_name
+    person_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- Check if person already in graph ----
+    existence_check = _check_person_exists(person_name)
+
+    # Save uploaded file to person dir
+    original_path = person_dir / file.filename
+    file_content  = await file.read()
+    original_path.write_bytes(file_content)
+
+    uipath_result    = None
+    langchain_result = None
+    uipath_error     = None
+    langchain_error  = None
+
+    # ---- Run UiPath extraction ----
+    if os.getenv("UIPATH_CLIENT_ID") and os.getenv("UIPATH_CLIENT_SECRET"):
+        try:
+            from ..extraction.uipath_api_connector import UiPathAPIConnector, UiPathAPIError
+            from ..extraction.uipath_extractor import UiPathExtractor
+
+            connector = UiPathAPIConnector.from_env()
+            json_path = connector.extract_to_json(
+                file_path  = original_path,
+                extractor  = "identity_documents",
+                output_dir = person_dir,
+            )
+            # Rename to clear name
+            stem     = Path(file.filename).stem.lower()
+            uipath_json_path = person_dir / f"{stem}_uipath.json"
+            json_path.rename(uipath_json_path)
+
+            ue = UiPathExtractor()
+            doc_u, entities_u = ue.extract(uipath_json_path)
+
+            if doc_u and entities_u:
+                entities_u[0].attributes["_person_folder"] = person_name
+                entities_u[0].attributes["_extractor"]     = "uipath"
+                _documents[doc_u.doc_id] = doc_u
+                _graph_builder.add_document(doc_u)
+                _embedding_engine.embed_entities(entities_u)
+                for e in entities_u:
+                    _graph_builder.add_entity(e)
+
+                uipath_result = {
+                    "doc_type":       doc_u.doc_type.value,
+                    "entity_name":    entities_u[0].name,
+                    "confidence":     entities_u[0].confidence,
+                    "fields":         {k: v for k, v in entities_u[0].attributes.items()
+                                       if not k.startswith("_")},
+                    "saved_json":     str(uipath_json_path),
+                }
+
+        except Exception as e:
+            uipath_error = str(e)
+            logger.warning("UiPath dual extract error: %s", e)
+    else:
+        uipath_error = "UiPath credentials not configured in .env"
+
+    # ---- Run LangChain OCR+LLM extraction ----
+    try:
+        from ..extraction.ocr_extractor import OCRExtractor
+
+        llm = _get_llm()
+        ocr_extractor = OCRExtractor(llm, model_name=getattr(llm, "model_name", "unknown"))
+        doc_l, entities_l = ocr_extractor.extract(original_path, person_name=person_name)
+
+        if doc_l and entities_l:
+            entities_l[0].attributes["_person_folder"] = person_name
+            entities_l[0].attributes["_extractor"]     = "langchain_ocr"
+            _documents[doc_l.doc_id] = doc_l
+            _graph_builder.add_document(doc_l)
+            _embedding_engine.embed_entities(entities_l)
+            for e in entities_l:
+                _graph_builder.add_entity(e)
+
+            # Save LangChain result as JSON too
+            stem = Path(file.filename).stem.lower()
+            lc_json_path = person_dir / f"{stem}_langchain.json"
+            lc_data = {
+                "document_type": doc_l.doc_type.value,
+                "confidence":    entities_l[0].confidence,
+                "source_file":   file.filename,
+                "fields": {
+                    k: {"value": v, "confidence": entities_l[0].confidence,
+                        "page": 1, "bounding_box": [0, 0, 0, 0]}
+                    for k, v in entities_l[0].attributes.items()
+                    if not k.startswith("_")
+                }
+            }
+            lc_json_path.write_text(_json.dumps(lc_data, indent=2))
+
+            langchain_result = {
+                "doc_type":    doc_l.doc_type.value,
+                "entity_name": entities_l[0].name,
+                "confidence":  entities_l[0].confidence,
+                "fields":      {k: v for k, v in entities_l[0].attributes.items()
+                                if not k.startswith("_")},
+                "saved_json":  str(lc_json_path),
+            }
+    except Exception as e:
+        langchain_error = str(e)
+        logger.warning("LangChain OCR dual extract error: %s", e)
+
+    # ---- Run entity resolution to link both extractions ----
+    _run_entity_resolution()
+    _get_query_engine()
+
+    # ---- Compare results ----
+    agreement = {}
+    field_conflicts = []
+
+    if uipath_result and langchain_result:
+        u_fields = uipath_result.get("fields", {})
+        l_fields = langchain_result.get("fields", {})
+        shared   = set(u_fields.keys()) & set(l_fields.keys())
+
+        for key in shared:
+            uv = str(u_fields[key]).strip().lower()
+            lv = str(l_fields[key]).strip().lower()
+            if uv == lv:
+                agreement[key] = u_fields[key]
+            else:
+                field_conflicts.append({
+                    "field":    key,
+                    "uipath":   u_fields[key],
+                    "langchain": l_fields[key],
+                })
+
+    return {
+        "person_name":      person_name,
+        "saved_to":         str(person_dir),
+        "original_file":    str(original_path),
+        "already_exists":   existence_check,
+        "uipath_result":    uipath_result,
+        "uipath_error":     uipath_error,
+        "langchain_result": langchain_result,
+        "langchain_error":  langchain_error,
+        "agreement":        agreement,
+        "field_conflicts":  field_conflicts,
+        "agreement_count":  len(agreement),
+        "conflict_count":   len(field_conflicts),
+        "graph_stats":      _graph_builder.stats(),
+    }
