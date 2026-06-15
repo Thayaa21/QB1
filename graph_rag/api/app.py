@@ -386,28 +386,39 @@ def smart_query_endpoint(request: QueryRequest):
 
     graph    = _graph_builder.get_graph()
     question = request.question.lower().strip()
-    llm      = _get_llm()
 
-    # ---- Step 1: Extract entity names from question ----
-    try:
-        name_prompt = (
-            f"Extract person names from this question. "
-            f"Return ONLY comma-separated names, or NONE.\n"
-            f"Question: {request.question}"
-        )
-        name_resp = llm.complete(name_prompt, temperature=0.0).strip()
-        names = [] if name_resp.upper() == "NONE" else [
-            n.strip() for n in name_resp.split(",") if n.strip()
-        ]
-    except Exception:
-        names = []
-
-    # ---- Step 2: Find matching entities ----
+    # ---- Step 1: Extract entity names WITHOUT LLM — use fast regex ----
+    # Match against known entity names in the graph (much faster than LLM)
+    import re as _re
     all_entity_nodes = [
         (nid, data)
         for nid, data in graph.nodes(data=True)
         if data.get("node_type") == "entity"
     ]
+
+    known_names = [data.get("name", "") for _, data in all_entity_nodes if data.get("name")]
+
+    # Find any known name that appears (partially) in the question
+    names = []
+    for known in known_names:
+        for part in known.lower().split():
+            # Match if question word is a prefix of entity name part (min 4 chars)
+            for qword in question.split():
+                if (len(qword) >= 4 and
+                        (qword in part or part.startswith(qword) or known.lower().startswith(qword))):
+                    if known not in names:
+                        names.append(known)
+                    break
+    names = list(dict.fromkeys(names))  # deduplicate preserving order
+
+    # Also try capitalized words from the question as name candidates
+    cap_words = _re.findall(r'\b[A-Z][a-z]{2,}\b', request.question)
+    for cw in cap_words:
+        cw_lower = cw.lower()
+        for known in known_names:
+            if cw_lower in known.lower() and known not in names:
+                names.append(known)
+                break
 
     if not all_entity_nodes:
         return {
