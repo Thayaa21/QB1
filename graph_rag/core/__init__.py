@@ -9,6 +9,7 @@ from .embeddings import EmbeddingEngine
 from .graph_builder import KnowledgeGraphBuilder
 from .resolver import EntityResolver
 from .contradiction import ContradictionDetector
+from .temporal import TemporalFilter
 
 __all__ = [
     # Enums
@@ -22,4 +23,5 @@ __all__ = [
     "KnowledgeGraphBuilder",
     "EntityResolver",
     "ContradictionDetector",
+    "TemporalFilter",
 ]
