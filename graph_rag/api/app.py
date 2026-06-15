@@ -309,7 +309,6 @@ def ingest_uipath(request: IngestRequest):
 def query_endpoint(request: QueryRequest):
     """
     Query the knowledge graph with a natural language question.
-
     Returns QueryResult as a JSON dict.
     Returns 400 if the graph is empty.
     """
@@ -332,7 +331,6 @@ def query_endpoint(request: QueryRequest):
         logger.error("Query failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
-    # Serialize QueryResult to dict (dataclass → dict manually)
     return {
         "question":              result.question,
         "answer":                result.answer,
@@ -366,6 +364,259 @@ def query_endpoint(request: QueryRequest):
         ],
         "has_conflicts":    result.has_conflicts,
         "temporal_context": result.temporal_context,
+    }
+
+
+@app.post("/smart-query")
+def smart_query_endpoint(request: QueryRequest):
+    """
+    Smart query with:
+    - Disambiguation: if multiple people match, return options instead of guessing
+    - Deep answers: always include proof (source file + exact line)
+    - Open-ended: handles broad questions like "how many licenses do we have?"
+    - Always finds something: scans all entities as fallback
+    """
+    stats = _graph_builder.stats()
+    if stats["nodes"] == 0:
+        return {
+            "type":    "empty",
+            "answer":  "No documents have been ingested yet. Please upload some documents first.",
+            "options": [],
+        }
+
+    graph    = _graph_builder.get_graph()
+    question = request.question.lower().strip()
+    llm      = _get_llm()
+
+    # ---- Step 1: Extract entity names from question ----
+    try:
+        name_prompt = (
+            f"Extract person names from this question. "
+            f"Return ONLY comma-separated names, or NONE.\n"
+            f"Question: {request.question}"
+        )
+        name_resp = llm.complete(name_prompt, temperature=0.0).strip()
+        names = [] if name_resp.upper() == "NONE" else [
+            n.strip() for n in name_resp.split(",") if n.strip()
+        ]
+    except Exception:
+        names = []
+
+    # ---- Step 2: Find matching entities ----
+    all_entity_nodes = [
+        (nid, data)
+        for nid, data in graph.nodes(data=True)
+        if data.get("node_type") == "entity"
+    ]
+
+    if not all_entity_nodes:
+        return {
+            "type":    "empty",
+            "answer":  "No entities found in the graph. Ingest some documents first.",
+            "options": [],
+        }
+
+    # ---- Handle open-ended questions (no specific person) ----
+    open_ended_keywords = ["how many", "list", "all", "count", "every", "total",
+                           "which", "what documents", "what licenses", "show all"]
+    is_open_ended = any(kw in question for kw in open_ended_keywords) and not names
+
+    if is_open_ended:
+        # Aggregate answer across all entities
+        summary_lines = []
+        for nid, data in all_entity_nodes:
+            attrs = data.get("attributes", {}) or {}
+            name  = data.get("name", "Unknown")
+            doc_t = data.get("doc_type", "")
+            src   = data.get("source_filename", "")
+            relevant_facts = []
+            for k, v in attrs.items():
+                if k.startswith("_"):
+                    continue
+                if any(kw in question for kw in ["license", "licence"]) and "license" in k:
+                    relevant_facts.append(f"{k}: {v}")
+                elif any(kw in question for kw in ["dob", "birth", "born"]) and "dob" in k:
+                    relevant_facts.append(f"dob: {v}")
+                elif any(kw in question for kw in ["passport"]) and "passport" in k:
+                    relevant_facts.append(f"passport_number: {v}")
+                elif any(kw in question for kw in ["address"]) and "address" in k:
+                    relevant_facts.append(f"address: {v}")
+            if relevant_facts:
+                summary_lines.append(f"• **{name}** ({doc_t}, {src}): {', '.join(relevant_facts)}")
+
+        if not summary_lines:
+            # Generic summary
+            for nid, data in all_entity_nodes:
+                name = data.get("name", "Unknown")
+                doc_t = data.get("doc_type", "")
+                src   = data.get("source_filename", "")
+                summary_lines.append(f"• {name} — {doc_t} ({src})")
+
+        try:
+            summary_prompt = (
+                f"Answer this question based on the data below.\n"
+                f"Question: {request.question}\n\n"
+                f"Data:\n" + "\n".join(summary_lines[:20])
+            )
+            answer = llm.complete(summary_prompt, temperature=0.0)
+        except Exception:
+            answer = f"Found {len(all_entity_nodes)} entities:\n" + "\n".join(summary_lines[:10])
+
+        return {
+            "type":     "summary",
+            "answer":   answer,
+            "count":    len(all_entity_nodes),
+            "entities": summary_lines[:20],
+            "options":  [],
+        }
+
+    # ---- Find entities matching the names ----
+    matched_groups: dict[str, list[tuple[str, dict]]] = {}  # name → list of (node_id, data)
+
+    for nid, data in all_entity_nodes:
+        entity_name = data.get("name", "").lower()
+        for qname in names:
+            qname_lower = qname.lower()
+            # Substring match: "thayaa" matches "Thayaananthan Kanagaraj"
+            if qname_lower in entity_name or entity_name in qname_lower:
+                matched_groups.setdefault(qname, []).append((nid, data))
+                break
+
+    # Fallback: if no name match, try semantic on all entities
+    if not matched_groups and names:
+        for nid, data in all_entity_nodes:
+            matched_groups.setdefault("_all", []).append((nid, data))
+
+    if not matched_groups:
+        return {
+            "type":    "not_found",
+            "answer":  f"No matching entities found for: {', '.join(names) if names else request.question}",
+            "options": [],
+        }
+
+    # ---- Step 3: Disambiguation ----
+    # Flatten all matches
+    all_matches = []
+    for qname, entities in matched_groups.items():
+        all_matches.extend(entities)
+
+    # Deduplicate by name
+    unique_by_name: dict[str, list[tuple[str, dict]]] = {}
+    for nid, data in all_matches:
+        full_name = data.get("name", "Unknown")
+        unique_by_name.setdefault(full_name, []).append((nid, data))
+
+    if len(unique_by_name) > 1:
+        # Multiple different people — ask for clarification
+        options = []
+        for full_name, entities in unique_by_name.items():
+            doc_types  = list({d.get("doc_type", "") for _, d in entities})
+            src_files  = list({d.get("source_filename", "") for _, d in entities})
+            attrs      = entities[0][1].get("attributes", {}) or {}
+            dob        = attrs.get("dob", "")
+            options.append({
+                "name":       full_name,
+                "doc_types":  doc_types,
+                "files":      src_files,
+                "dob_hint":   dob,
+                "entity_ids": [nid for nid, _ in entities],
+            })
+
+        return {
+            "type":    "disambiguation",
+            "answer":  f"Found {len(unique_by_name)} people matching your query. Which one do you mean?",
+            "options": options,
+        }
+
+    # ---- Step 4: Single person — get deep answer with proof ----
+    full_name = list(unique_by_name.keys())[0]
+    entities  = unique_by_name[full_name]
+
+    # Gather all attributes and provenance
+    all_facts: list[dict] = []
+    context_lines: list[str] = []
+
+    for nid, data in entities:
+        attrs    = data.get("attributes", {}) or {}
+        src_file = data.get("source_filename", "")
+        doc_type = data.get("doc_type", "")
+
+        # Get provenance from the mentions edge
+        for neighbor in graph.neighbors(nid):
+            edge = graph.edges.get((nid, neighbor)) or graph.edges.get((neighbor, nid), {})
+            if edge.get("edge_type") == "mentions":
+                line_num  = edge.get("line_number", 0)
+                line_text = edge.get("line_text", "")
+
+                for attr_key, attr_val in attrs.items():
+                    if attr_key.startswith("_"):
+                        continue
+                    all_facts.append({
+                        "fact":            f"{attr_key}: {attr_val}",
+                        "source_filename": src_file,
+                        "doc_type":        doc_type,
+                        "line_number":     line_num,
+                        "line_text":       line_text,
+                        "attribute_key":   attr_key,
+                        "value":           attr_val,
+                    })
+                    context_lines.append(
+                        f"{attr_key}: {attr_val}  [from {src_file}, line {line_num}]"
+                    )
+                break
+        else:
+            # No mentions edge found — still add attributes
+            for attr_key, attr_val in attrs.items():
+                if not attr_key.startswith("_"):
+                    all_facts.append({
+                        "fact":            f"{attr_key}: {attr_val}",
+                        "source_filename": src_file,
+                        "doc_type":        doc_type,
+                        "line_number":     0,
+                        "line_text":       "",
+                        "attribute_key":   attr_key,
+                        "value":           attr_val,
+                    })
+                    context_lines.append(f"{attr_key}: {attr_val}  [from {src_file}]")
+
+    # Ask LLM to synthesize answer from context
+    context_str = "\n".join(context_lines[:30])
+    try:
+        answer_prompt = (
+            f"Answer this question using ONLY the data below. "
+            f"Be specific. Include values directly.\n\n"
+            f"Question: {request.question}\n\n"
+            f"Data about {full_name}:\n{context_str}"
+        )
+        answer = llm.complete(answer_prompt, temperature=0.0)
+    except Exception:
+        # Fallback: find the most relevant fact
+        relevant_facts = []
+        for f in all_facts:
+            if any(kw in question for kw in ["dob", "birth", "born"]) and "dob" in f["attribute_key"]:
+                relevant_facts.append(f)
+            elif any(kw in question for kw in ["license"]) and "license" in f["attribute_key"]:
+                relevant_facts.append(f)
+            elif any(kw in question for kw in ["passport"]) and "passport" in f["attribute_key"]:
+                relevant_facts.append(f)
+            elif any(kw in question for kw in ["address"]) and "address" in f["attribute_key"]:
+                relevant_facts.append(f)
+            elif any(kw in question for kw in ["name"]) and f["attribute_key"] == "name":
+                relevant_facts.append(f)
+        if relevant_facts:
+            f = relevant_facts[0]
+            answer = f"{full_name}'s {f['attribute_key']} is {f['value']} (from {f['source_filename']})"
+        else:
+            answer = f"Found data for {full_name}: " + ", ".join(
+                f"{f['attribute_key']}={f['value']}" for f in all_facts[:5]
+            )
+
+    return {
+        "type":     "answer",
+        "person":   full_name,
+        "answer":   answer,
+        "facts":    all_facts,
+        "options":  [],
     }
 
 
