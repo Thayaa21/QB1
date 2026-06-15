@@ -47,9 +47,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..core.embeddings import EmbeddingEngine
@@ -445,3 +446,171 @@ def set_extraction_mode(request: ExtractionModeRequest):
         )
     _extraction_mode = mode
     return {"mode": _extraction_mode, "message": f"Extraction mode set to {mode}"}
+
+
+# ---------------------------------------------------------------------------
+# FILE UPLOAD ENDPOINTS
+# ---------------------------------------------------------------------------
+# These endpoints accept actual uploaded files (multipart/form-data)
+# instead of file paths. Used by the React frontend drag-and-drop.
+
+import tempfile
+import shutil
+
+@app.post("/upload")
+async def upload_and_ingest(
+    files: list[UploadFile] = File(...),
+    extractor: str = "langchain",
+):
+    """
+    Upload one or more files and ingest them directly.
+
+    Accepts:
+        - .txt files  → LangChain mode (extractor=langchain)
+        - .json files → UiPath mode   (extractor=uipath)
+
+    The file is saved to a temp directory, ingested, then cleaned up.
+    Returns ingestion summary.
+    """
+    global _extraction_mode
+    extractor = extractor.lower().strip()
+    if extractor not in ("langchain", "uipath"):
+        raise HTTPException(400, detail=f"Invalid extractor: {extractor}")
+
+    _extraction_mode = extractor
+    docs_ingested  = 0
+    entities_total = 0
+    results        = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for upload in files:
+            # Save uploaded file to temp dir
+            tmp_path = Path(tmpdir) / upload.filename
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(upload.file, f)
+
+            # Ingest
+            file_result = {"filename": upload.filename, "status": "ok", "entities": 0}
+            try:
+                if extractor == "uipath":
+                    from ..extraction.uipath_extractor import UiPathExtractor
+                    ue  = UiPathExtractor()
+                    doc, entities = ue.extract(tmp_path)
+                    if doc:
+                        _documents[doc.doc_id] = doc
+                        _graph_builder.add_document(doc)
+                        _embedding_engine.embed_entities(entities)
+                        for entity in entities:
+                            _graph_builder.add_entity(entity)
+                        docs_ingested  += 1
+                        entities_total += len(entities)
+                        file_result["entities"] = len(entities)
+                else:
+                    from ..core.loader import DocumentLoader
+                    from ..extraction.classifier import DocumentClassifier
+                    from ..extraction.langchain_extractor import LangChainExtractor
+                    llm        = _get_llm()
+                    loader     = DocumentLoader()
+                    classifier = DocumentClassifier(llm)
+                    extractor_obj = LangChainExtractor(
+                        llm, model_name=getattr(llm, "model_name", "unknown")
+                    )
+                    doc = loader.load_file(tmp_path)
+                    if doc:
+                        doc_type, schema = classifier.classify(doc)
+                        entities = extractor_obj.extract(doc, schema)
+                        _documents[doc.doc_id] = doc
+                        _graph_builder.add_document(doc)
+                        _embedding_engine.embed_entities(entities)
+                        for entity in entities:
+                            _graph_builder.add_entity(entity)
+                        docs_ingested  += 1
+                        entities_total += len(entities)
+                        file_result["entities"] = len(entities)
+                        file_result["doc_type"] = doc_type.value
+            except Exception as e:
+                file_result["status"] = f"error: {e}"
+                logger.warning("Upload ingest failed for %s: %s", upload.filename, e)
+
+            results.append(file_result)
+
+    # Run resolution after all files uploaded
+    _run_entity_resolution()
+    _get_query_engine()
+
+    return {
+        "documents_ingested": docs_ingested,
+        "entities_extracted": entities_total,
+        "extraction_mode":    _extraction_mode,
+        "files":              results,
+        "graph_stats":        _graph_builder.stats(),
+    }
+
+
+@app.get("/testdata")
+def list_test_data():
+    """
+    Return a tree of all available test dataset files.
+    Used by the Test Dataset panel in the frontend.
+
+    Returns:
+        {
+          "people": [
+            {
+              "name": "alice_chen",
+              "files": [
+                {"name": "birth_certificate.txt", "type": "txt", "path": "..."},
+                {"name": "birth_certificate.json", "type": "json", "path": "..."},
+                ...
+              ]
+            },
+            ...
+          ]
+        }
+    """
+    people_dir = Path("docs/people")
+    if not people_dir.exists():
+        return {"people": []}
+
+    people = []
+    for person_dir in sorted(people_dir.iterdir()):
+        if not person_dir.is_dir():
+            continue
+        files = []
+        for f in sorted(person_dir.iterdir()):
+            if f.suffix in (".txt", ".json"):
+                files.append({
+                    "name": f.name,
+                    "type": f.suffix.lstrip("."),
+                    "path": str(f),
+                    "size": f.stat().st_size,
+                })
+        if files:
+            people.append({
+                "name":  person_dir.name,
+                "label": person_dir.name.replace("_", " ").title(),
+                "files": files,
+            })
+
+    return {"people": people, "total": len(people)}
+
+
+@app.post("/testdata/ingest")
+def ingest_test_file(body: dict):
+    """
+    Ingest a single file from the test dataset by its path.
+
+    Body: {"path": "docs/people/alice_chen/birth_certificate.txt", "extractor": "langchain"}
+
+    This lets the frontend upload test files one by one without the user
+    needing to find files on disk.
+    """
+    file_path = body.get("path", "")
+    extractor = body.get("extractor", "langchain").lower()
+    p = Path(file_path)
+
+    if not p.exists():
+        raise HTTPException(404, detail=f"File not found: {file_path}")
+
+    request = IngestRequest(paths=[str(p)], extractor=extractor)
+    return ingest(request)

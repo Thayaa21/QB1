@@ -106,3 +106,23 @@ export async function setExtractionMode(
   const response = await api.post('/extraction/mode', { mode });
   return response.data;
 }
+
+// ---- File Upload ----
+
+// Export API_BASE so TestDatasetPanel can use it directly for fetch()
+export const API_BASE = 'http://localhost:8000';
+
+export async function uploadFiles(
+  files: FileList | File[],
+  extractor: 'langchain' | 'uipath' = 'langchain'
+): Promise<IngestResponse> {
+  const formData = new FormData();
+  Array.from(files).forEach(f => formData.append('files', f));
+  formData.append('extractor', extractor);
+
+  const response = await axios.post(`${API_BASE}/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300_000, // 5 min for multiple LLM calls
+  });
+  return response.data;
+}
