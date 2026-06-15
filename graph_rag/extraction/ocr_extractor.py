@@ -207,20 +207,26 @@ def _regex_extract(text: str) -> dict[str, str]:
         fields["sex"] = "Male" if val.startswith("M") else "Female"
 
     # ---- Height ----
-    # Formats: "6'4"", "6-04", "HGT 604", "6 ft 4 in"
+    # Formats: "5'8"", "508", "5-08", "HGT 508", "58" (5ft 8in)
     ht_patterns = [
         r"(?:hgt|height|ht)[:\s]+([0-9]['`]?\s*[0-9]{1,2}[\"'`]?(?:\s*in)?)",
-        r"(?:hgt|height)[:\s]+([0-9]\-[0-9]{2})",  # 6-04 format
-        r"\bHGT\s+([0-9]{3})\b",                    # HGT 604 → 6'04"
+        r"(?:hgt|height)[:\s]+([0-9]\-[0-9]{2})",  # 5-08 format
+        r"\bHGT\s+([0-9]{3})\b",    # HGT 508 → 5'08"
+        r"\bHGT\s+([0-9]{2})\b",    # HGT 58 → 5'8"
     ]
     for pat in ht_patterns:
         m = re.search(pat, clean_text, re.IGNORECASE)
         if m:
             ht = m.group(1).strip()
-            # Normalize "604" → "6'04"", "6-04" → "6'04""
+            # Normalize various formats to feet'inches"
             if re.match(r"^[0-9]{3}$", ht):
+                # "508" → 5'08"
+                ht = f"{ht[0]}'{ht[1:]}\""
+            elif re.match(r"^[0-9]{2}$", ht):
+                # "58" → 5'8"
                 ht = f"{ht[0]}'{ht[1:]}\""
             elif re.match(r"^[0-9]-[0-9]{2}$", ht):
+                # "5-08" → 5'08"
                 ht = f"{ht[0]}'{ht[2:]}\""
             fields["height"] = ht
             break

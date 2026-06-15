@@ -1185,3 +1185,216 @@ async def dual_extract(
         "conflict_count":   len(field_conflicts),
         "graph_stats":      _graph_builder.stats(),
     }
+
+
+# ---------------------------------------------------------------------------
+# PREVIEW EXTRACTION — extract fields WITHOUT adding to graph
+# User reviews results and confirms before anything is saved
+# ---------------------------------------------------------------------------
+
+@app.post("/person/extract-preview")
+async def extract_preview(
+    file:        UploadFile = File(...),
+    person_name: str        = "unknown_person",
+    extractor:   str        = "langchain",
+    dry_run:     str        = "true",
+):
+    """
+    Extract fields from an image/PDF WITHOUT modifying the graph.
+    Returns extracted fields for user review.
+    After review, call POST /person/add-to-graph to actually add.
+
+    Args:
+        file        — image or PDF
+        person_name — folder name
+        extractor   — "langchain" (OCR+LLM) or "uipath" (API)
+        dry_run     — always true here, kept for clarity
+    """
+    import re as _re
+    extractor_mode = extractor.lower().strip()
+    person_name    = _re.sub(r"[^a-z0-9_]", "_", person_name.lower().strip())
+
+    # Save uploaded file to person folder
+    person_dir   = Path("docs") / "people" / person_name
+    person_dir.mkdir(parents=True, exist_ok=True)
+    file_content = await file.read()
+    save_path    = person_dir / file.filename
+    save_path.write_bytes(file_content)
+
+    doc      = None
+    entities = []
+    doc_type_str = "GENERIC"
+    saved_json   = None
+
+    try:
+        if extractor_mode == "uipath":
+            if not os.getenv("UIPATH_CLIENT_ID") or not os.getenv("UIPATH_CLIENT_SECRET"):
+                raise HTTPException(400, detail="UiPath credentials not set in .env")
+
+            from ..extraction.uipath_api_connector import UiPathAPIConnector, UiPathAPIError
+            from ..extraction.uipath_extractor import UiPathExtractor
+
+            connector = UiPathAPIConnector.from_env()
+            json_path = connector.extract_to_json(
+                file_path  = save_path,
+                output_dir = person_dir,
+            )
+            stem             = save_path.stem.lower()
+            uipath_json_path = person_dir / f"{stem}_uipath.json"
+            json_path.rename(uipath_json_path)
+            saved_json = str(uipath_json_path)
+
+            ue = __import__("graph_rag.extraction.uipath_extractor",
+                            fromlist=["UiPathExtractor"]).UiPathExtractor()
+            doc, entities = ue.extract(uipath_json_path)
+            if doc:
+                doc_type_str = doc.doc_type.value
+
+        else:  # langchain OCR
+            from ..extraction.ocr_extractor import OCRExtractor
+            llm = _get_llm()
+            ocr = OCRExtractor(llm, model_name=getattr(llm, "model_name", "unknown"))
+            doc, entities = ocr.extract(save_path, person_name=person_name)
+            if doc:
+                doc_type_str = doc.doc_type.value
+                # Save extracted JSON for reference
+                import json as _json
+                stem = save_path.stem.lower()
+                lc_path = person_dir / f"{stem}_langchain_preview.json"
+                preview_data = {
+                    "document_type": doc_type_str,
+                    "confidence":    entities[0].confidence if entities else 0.0,
+                    "source_file":   file.filename,
+                    "fields": {
+                        k: {"value": v, "confidence": entities[0].confidence if entities else 0.0,
+                            "page": 1, "bounding_box": [0,0,0,0]}
+                        for k, v in (entities[0].attributes.items() if entities else {})
+                        if not k.startswith("_")
+                    }
+                }
+                lc_path.write_text(_json.dumps(preview_data, indent=2))
+                saved_json = str(lc_path)
+
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+    # Return preview — nothing added to graph yet
+    fields_out = {}
+    if entities:
+        for k, v in entities[0].attributes.items():
+            if not k.startswith("_"):
+                fields_out[k] = {
+                    "value":      str(v),
+                    "confidence": entities[0].confidence,
+                }
+
+    return {
+        "person_name":  person_name,
+        "filename":     file.filename,
+        "doc_type":     doc_type_str,
+        "entity_name":  entities[0].name if entities else person_name,
+        "confidence":   entities[0].confidence if entities else 0.0,
+        "fields":       fields_out,
+        "saved_json":   saved_json,
+        "extractor":    extractor_mode,
+        "added":        False,   # NOT added to graph yet
+    }
+
+
+@app.post("/person/add-to-graph")
+def add_extraction_to_graph(body: dict):
+    """
+    After the user reviews and confirms extracted fields,
+    add the entity to the knowledge graph.
+
+    Body:
+        {
+          "extraction_result": {...},  ← from /person/extract-preview
+          "person_name": "thayaananthan_kanagaraj"
+        }
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    extraction = body.get("extraction_result", {})
+    person_name = body.get("person_name", "unknown")
+
+    if not extraction:
+        raise HTTPException(400, detail="extraction_result is required")
+
+    # Rebuild a minimal Document and Entity from the extraction result
+    from ..core.models import Document, Entity, DocType, EntityType
+
+    doc_type_str = extraction.get("doc_type", "GENERIC")
+    try:
+        doc_type = DocType(doc_type_str)
+    except ValueError:
+        doc_type = DocType.GENERIC
+
+    # Build Document
+    doc = Document(
+        doc_id       = str(_uuid.uuid4()),
+        filename     = extraction.get("filename", "uploaded_doc"),
+        text         = "",
+        lines        = [],
+        paragraphs   = [],
+        line_offsets = [],
+        doc_type     = doc_type,
+        doc_date     = None,
+        empty        = False,
+        metadata     = {"person_folder": person_name, "extractor": extraction.get("extractor", "")},
+    )
+
+    # Build attributes from fields
+    attributes: dict[str, str] = {"_person_folder": person_name}
+    raw_fields = extraction.get("fields", {})
+    for k, v in raw_fields.items():
+        if k.startswith("_"):
+            continue
+        val = v.get("value") if isinstance(v, dict) else str(v)
+        if val:
+            attributes[k] = str(val)
+
+    name = (
+        attributes.get("name")
+        or extraction.get("entity_name")
+        or person_name.replace("_", " ").title()
+    )
+
+    entity = Entity(
+        entity_id            = str(_uuid.uuid4()),
+        name                 = name,
+        entity_type          = EntityType.PERSON,
+        attributes           = attributes,
+        source_doc_id        = doc.doc_id,
+        source_filename      = doc.filename,
+        doc_type             = doc_type,
+        line_number          = 0,
+        line_text            = "",
+        paragraph_index      = 0,
+        paragraph_text       = "",
+        char_offset_start    = 0,
+        char_offset_end      = 0,
+        extractor_model      = extraction.get("extractor", ""),
+        extraction_timestamp = datetime.now(timezone.utc).isoformat(),
+        confidence           = float(extraction.get("confidence", 1.0)),
+        embedding            = None,
+    )
+
+    # Add to graph
+    _documents[doc.doc_id] = doc
+    _graph_builder.add_document(doc)
+    _embedding_engine.embed_entities([entity])
+    _graph_builder.add_entity(entity)
+
+    # Run entity resolution to link with existing entities
+    _run_entity_resolution()
+    _get_query_engine()
+
+    return {
+        "added":       True,
+        "person_name": person_name,
+        "entity_name": name,
+        "doc_type":    doc_type_str,
+        "graph_stats": _graph_builder.stats(),
+    }
