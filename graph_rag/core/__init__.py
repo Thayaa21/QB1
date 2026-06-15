@@ -8,6 +8,7 @@ from .loader import DocumentLoader, verify_line_offsets
 from .embeddings import EmbeddingEngine
 from .graph_builder import KnowledgeGraphBuilder
 from .resolver import EntityResolver
+from .contradiction import ContradictionDetector
 
 __all__ = [
     # Enums
@@ -20,4 +21,5 @@ __all__ = [
     "EmbeddingEngine",
     "KnowledgeGraphBuilder",
     "EntityResolver",
+    "ContradictionDetector",
 ]
