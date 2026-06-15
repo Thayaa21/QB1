@@ -71,7 +71,7 @@ DOC_TYPE_SCHEMAS: dict[str, dict[str, str]] = {
         "expiry_date":    "Date the license expires in ISO format YYYY-MM-DD",
     },
     "PASSPORT": {
-        "name":            "Full name as printed on passport (given names + surname)",
+        "name":            "Full name — combine Given Names and Surname into one full name string",
         "dob":             "Date of birth in ISO format YYYY-MM-DD",
         "passport_number": "Passport document number",
         "nationality":     "Country of nationality",

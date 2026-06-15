@@ -1236,7 +1236,7 @@ picks the most recent document, giving you the current address.
 | 2 | LLM Provider | ✅ Done | `graph_rag/llm/` |
 | 3 | Document Loader | ✅ Done | `graph_rag/core/loader.py` |
 | 4 | Document Classifier | ✅ Done | `graph_rag/extraction/classifier.py` |
-| 5 | LangChain Extractor | 🔲 | `graph_rag/extraction/langchain_extractor.py` |
+| 5 | LangChain Extractor | ✅ Done | `graph_rag/extraction/langchain_extractor.py` |
 | 6 | UiPath Extractor | 🔲 | `graph_rag/extraction/uipath_extractor.py` |
 | 7 | Embedding Engine | 🔲 | `graph_rag/core/embeddings.py` |
 | 8 | Knowledge Graph Builder | 🔲 | `graph_rag/core/graph_builder.py` |
