@@ -70,7 +70,10 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const html = await getGraphVisualization();
+      // Use fetch directly — axios struggles with HTML content type
+      const resp = await fetch('http://localhost:8000/graph/visualize');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const html = await resp.text();
       setHtmlContent(html);
     } catch (err) {
       setError('Could not load graph visualization');

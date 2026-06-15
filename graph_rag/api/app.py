@@ -458,9 +458,15 @@ def smart_query_endpoint(request: QueryRequest):
                 f"Question: {request.question}\n\n"
                 f"Data:\n" + "\n".join(summary_lines[:20])
             )
-            answer = llm.complete(summary_prompt, temperature=0.0)
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(llm.complete, summary_prompt, 0.0)
+                try:
+                    answer = future.result(timeout=12)
+                except concurrent.futures.TimeoutError:
+                    raise Exception("timeout")
         except Exception:
-            answer = f"Found {len(all_entity_nodes)} entities:\n" + "\n".join(summary_lines[:10])
+            answer = f"Found {len(all_entity_nodes)} entities in the graph:\n" + "\n".join(summary_lines[:10])
 
         return {
             "type":     "summary",
@@ -588,8 +594,42 @@ def smart_query_endpoint(request: QueryRequest):
             f"Question: {request.question}\n\n"
             f"Data about {full_name}:\n{context_str}"
         )
-        answer = llm.complete(answer_prompt, temperature=0.0)
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(llm.complete, answer_prompt, 0.0)
+            try:
+                answer = future.result(timeout=15)  # 15s max for synthesis
+            except concurrent.futures.TimeoutError:
+                raise Exception("LLM timeout")
     except Exception:
+        # Fast fallback — build answer directly from facts without LLM
+        question_lower = request.question.lower()
+        relevant = []
+        for f in all_facts:
+            k = f["attribute_key"].lower()
+            if any(kw in question_lower for kw in ["dob","birth","born"]) and "dob" in k:
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["license","licence"]) and "license" in k:
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["passport"]) and "passport" in k:
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["address"]) and "address" in k:
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["name"]) and k == "name":
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["height","hgt"]) and "height" in k:
+                relevant.append(f)
+            elif any(kw in question_lower for kw in ["expiry","expiration","expires"]) and "expiry" in k:
+                relevant.append(f)
+        if not relevant:
+            relevant = all_facts[:5]
+        lines = []
+        for f in relevant[:5]:
+            src = f"[{f['source_filename']}]"
+            if f["line_number"] > 0:
+                src += f" line {f['line_number']}"
+            lines.append(f"{f['attribute_key']}: {f['value']}  {src}")
+        answer = f"{full_name} — " + " | ".join(lines)
         # Fallback: find the most relevant fact
         relevant_facts = []
         for f in all_facts:
