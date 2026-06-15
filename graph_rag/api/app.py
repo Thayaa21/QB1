@@ -701,10 +701,10 @@ async def uipath_extract(
             pipeline_json = json.loads(json_path.read_text())
 
         except UiPathAPIError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=503, detail=str(e))
         except Exception as e:
             logger.error("UiPath extraction error: %s", e)
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=f"UiPath error: {e}")
 
     return {
         "filename":          file.filename,

@@ -164,10 +164,18 @@ class UiPathAPIConnector:
     def _get_project_id(self, base_url: str, headers: dict) -> str:
         """Get the first available DU project ID."""
         resp = requests.get(
-            f"{base_url}/projects",
-            headers=headers, timeout=20
+            f"{base_url}/projects?api-version=1",
+            headers={**headers, "Accept": "application/json"},
+            timeout=20,
+            allow_redirects=False,
         )
-        if resp.status_code == 200 and resp.headers.get("Content-Type", "").startswith("application/json"):
+        if resp.status_code == 404:
+            raise UiPathAPIError(
+                "Document Understanding service is not enabled in your UiPath tenant. "
+                "Go to cloud.uipath.com → Admin → Tenants → DefaultTenant → Services → "
+                "Enable 'Document Understanding', then try again."
+            )
+        if resp.status_code == 200 and "application/json" in resp.headers.get("Content-Type", ""):
             data = resp.json()
             projects = data.get("projects") or data.get("value") or (data if isinstance(data, list) else [])
             if projects:
@@ -195,8 +203,9 @@ class UiPathAPIConnector:
             "content":     content_b64,
         }
 
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        if resp.status_code in (200, 202):
+        resp = requests.post(url, headers={**headers, "Accept": "application/json"},
+                             json=payload, timeout=60)
+        if resp.status_code in (200, 202) and "application/json" in ct:
             data = resp.json()
             doc_id = data.get("documentId") or data.get("id") or ""
             if doc_id:
@@ -206,7 +215,10 @@ class UiPathAPIConnector:
             if op_id:
                 return self._poll_digitization(base_url, headers, project_id, op_id)
         raise UiPathAPIError(
-            f"Digitization failed: {resp.status_code} {resp.text[:200]}"
+            f"Digitization failed ({resp.status_code}). "
+            f"The Document Understanding service may not be enabled in your tenant. "
+            f"Go to: cloud.uipath.com → Admin → Tenants → DefaultTenant → Services → Enable Document Understanding. "
+            f"Response: {resp.text[:100]}"
         )
 
     def _poll_digitization(self, base_url: str, headers: dict,
