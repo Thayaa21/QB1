@@ -43,10 +43,7 @@ logger = logging.getLogger(__name__)
 def _image_to_text(file_path: Path) -> str:
     """
     Convert an image or PDF to raw text using pytesseract OCR.
-
     Supports: PNG, JPG, JPEG, TIFF, BMP, PDF
-
-    Returns raw OCR text string.
     """
     suffix = file_path.suffix.lower()
 
@@ -55,7 +52,7 @@ def _image_to_text(file_path: Path) -> str:
         from PIL import Image
 
         if suffix == ".pdf":
-            # Convert PDF pages to images first
+            # Try pdf2image first (needs poppler)
             try:
                 from pdf2image import convert_from_path
                 pages = convert_from_path(str(file_path), dpi=300)
@@ -63,20 +60,36 @@ def _image_to_text(file_path: Path) -> str:
                 for page in pages:
                     texts.append(pytesseract.image_to_string(page, lang="eng"))
                 return "\n".join(texts)
-            except ImportError:
-                # pdf2image not installed — try reading as image directly
-                logger.warning("pdf2image not installed, trying direct PIL open")
-                img = Image.open(file_path)
-                return pytesseract.image_to_string(img, lang="eng")
+            except Exception as pdf_err:
+                logger.warning("pdf2image failed (%s), trying PIL fallback", pdf_err)
+                # PIL fallback for PDFs that are actually images
+                try:
+                    img = Image.open(file_path)
+                    return pytesseract.image_to_string(img, lang="eng")
+                except Exception:
+                    raise RuntimeError(
+                        f"Cannot read PDF. Install poppler: brew install poppler\n{pdf_err}"
+                    )
         else:
             img = Image.open(file_path)
-            return pytesseract.image_to_string(img, lang="eng")
+            # Upscale small images for better OCR
+            w, h = img.size
+            if w < 1000 or h < 1000:
+                scale = max(1000 / w, 1000 / h, 2.0)
+                img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            # Convert to grayscale for better OCR accuracy
+            if img.mode != 'L':
+                img = img.convert('L')
+            return pytesseract.image_to_string(img, lang="eng",
+                                               config="--psm 3 --oem 3")
 
     except ImportError:
         raise RuntimeError(
             "pytesseract or Pillow not installed. "
             "Run: pip install pytesseract Pillow pdf2image"
         )
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError(f"OCR failed for {file_path.name}: {e}")
 
@@ -456,16 +469,47 @@ class OCRExtractor:
     def _detect_doc_type(self, text: str) -> DocType:
         """Heuristic doc type detection from OCR text keywords."""
         text_lower = text.lower()
-        if any(w in text_lower for w in ["passport", "travel document", "p<"]):
-            return DocType.PASSPORT
-        if any(w in text_lower for w in ["driver", "licence", "license", "driving"]):
+
+        # Check for driver's license first (most common)
+        license_signals = ["driver", "licence", "license", "driving",
+                           "motor vehicle", "dmv", "class", "endorsements",
+                           "restrictions", "lic no", "license no"]
+        if any(w in text_lower for w in license_signals):
             return DocType.DRIVERS_LICENSE
-        if any(w in text_lower for w in ["birth certificate", "certificate of birth", "registration no"]):
+
+        # Passport signals
+        passport_signals = ["passport", "travel document", "p<", "nationality",
+                            "place of birth", "date of issue", "authority"]
+        if any(w in text_lower for w in passport_signals):
+            return DocType.PASSPORT
+
+        # Birth certificate
+        bc_signals = ["birth certificate", "certificate of birth", "registration no",
+                      "place of birth", "father", "mother", "registrar"]
+        if any(w in text_lower for w in bc_signals):
             return DocType.BIRTH_CERTIFICATE
-        if any(w in text_lower for w in ["insurance", "policy", "premium", "coverage"]):
+
+        # Insurance
+        ins_signals = ["insurance", "policy", "premium", "coverage", "beneficiary",
+                       "insured", "policyholder"]
+        if any(w in text_lower for w in ins_signals):
             return DocType.INSURANCE
-        if any(w in text_lower for w in ["patient", "diagnosis", "prescription", "hospital"]):
+
+        # Medical
+        med_signals = ["patient", "diagnosis", "prescription", "hospital",
+                       "physician", "medications", "clinic"]
+        if any(w in text_lower for w in med_signals):
             return DocType.MEDICAL_RECORD
+
+        # If we detect any name-like patterns + dates, it's probably a license or ID
+        # even if keywords aren't clear
+        has_date  = bool(re.search(r"\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b", text))
+        has_state = bool(re.search(r"\b(AZ|CA|NY|TX|FL|BC|ON|AB|QC)\b", text))
+        has_dob   = bool(re.search(r"dob|birth|born", text_lower))
+
+        if has_date and (has_state or has_dob):
+            return DocType.DRIVERS_LICENSE
+
         return DocType.GENERIC
 
     def _verify_with_llm(

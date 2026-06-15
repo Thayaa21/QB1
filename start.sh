@@ -86,7 +86,15 @@ done
 if [ -n "$MISSING_PKGS" ]; then
     echo -e "${YELLOW}  Installing missing packages:$MISSING_PKGS${NC}"
     $PYTHON -m pip install fastapi uvicorn networkx rapidfuzz click python-dotenv \
-        pyvis sentence-transformers openai python-dateutil python-multipart --quiet
+        pyvis sentence-transformers openai python-dateutil python-multipart \
+        pytesseract Pillow pdf2image --quiet
+
+# Install poppler for PDF→image conversion (needed by pdf2image)
+if ! command -v pdftoppm &>/dev/null; then
+    echo -e "${YELLOW}  Installing poppler for PDF support...${NC}"
+    brew install poppler --quiet 2>/dev/null || \
+        echo -e "${YELLOW}  Could not install poppler. PDFs may not work.${NC}"
+fi
 else
     echo -e "${GREEN}  ✓ All Python packages installed${NC}"
 fi
