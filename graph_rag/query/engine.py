@@ -167,8 +167,17 @@ class QueryEngine:
         matched_ids = self._traversal.find_entities(
             names=names,
             query_embedding=query_embedding,
-            threshold=0.40,  # Lower threshold for query matching
+            threshold=0.20,  # Very permissive — substring match boosts above this
         )
+
+        # Fallback: if no match, try semantic-only with very low threshold
+        if not matched_ids:
+            logger.info("No matches with names — falling back to semantic-only search")
+            matched_ids = self._traversal.find_entities(
+                names=[],
+                query_embedding=query_embedding,
+                threshold=0.10,
+            )
 
         if not matched_ids:
             logger.info("QueryEngine: no matching entities found.")

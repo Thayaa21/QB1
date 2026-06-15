@@ -156,6 +156,14 @@ class MultiHopTraversal:
             # ---- Hybrid score ----
             match_score = 0.5 * name_score + 0.5 * semantic_score
 
+            # Also do a direct substring name match as fallback — very permissive
+            # e.g. query "Alice" should match entity "Alice Chen"
+            for query_name in names:
+                qn_lower = query_name.lower().strip()
+                en_lower = entity_name.lower().strip()
+                if qn_lower and (qn_lower in en_lower or en_lower in qn_lower):
+                    match_score = max(match_score, 0.85)  # force above threshold
+
             if match_score >= threshold:
                 matches.append((match_score, node_id))
 

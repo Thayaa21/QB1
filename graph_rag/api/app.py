@@ -698,7 +698,8 @@ async def uipath_extract(
             _get_query_engine()
 
             # Return the extracted fields for display
-            pipeline_json = json.loads(json_path.read_text())
+            import json as _json
+            pipeline_json = _json.loads(json_path.read_text())
 
         except UiPathAPIError as e:
             raise HTTPException(status_code=503, detail=str(e))
