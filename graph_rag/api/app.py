@@ -170,15 +170,15 @@ class ExtractionModeRequest(BaseModel):
 
 def _run_entity_resolution():
     """
-    Run entity resolution and contradiction detection on the current graph.
+    Run entity resolution, contradiction detection, and household detection.
     Called after each ingest to keep the graph up to date.
     """
     from ..core.resolver import EntityResolver
     from ..core.contradiction import ContradictionDetector
+    from ..core.household import HouseholdDetector
 
     graph = _graph_builder.get_graph()
 
-    # Only resolve if we have entities
     entity_count = len(_graph_builder.get_entity_nodes())
     if entity_count < 2:
         return
@@ -193,7 +193,6 @@ def _run_entity_resolution():
             )
         logger.info("Resolution: added %d same_as edges", len(pairs))
 
-        # Detect contradictions
         detector   = ContradictionDetector(graph)
         conflicts  = detector.detect()
         for conflict in conflicts:
@@ -201,8 +200,15 @@ def _run_entity_resolution():
                 conflict.entity_id_a, conflict.entity_id_b, conflict
             )
         logger.info("Contradiction: found %d conflicts", len(conflicts))
+
+        # Household detection — find people at same address
+        household_detector = HouseholdDetector(graph)
+        households = household_detector.detect()
+        household_detector.add_lives_with_edges(households, _graph_builder)
+        logger.info("Household: found %d households", len(households))
+
     except Exception as e:
-        logger.warning("Resolution/contradiction detection failed: %s", e)
+        logger.warning("Resolution/contradiction/household detection failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +435,8 @@ def smart_query_endpoint(request: QueryRequest):
 
     # ---- Handle open-ended questions (no specific person) ----
     open_ended_keywords = ["how many", "list", "all", "count", "every", "total",
-                           "which", "what documents", "what licenses", "show all"]
+                           "which", "what documents", "what licenses", "show all",
+                           "household", "same address", "who lives"]
     is_open_ended = any(kw in question for kw in open_ended_keywords) and not names
 
     if is_open_ended:
@@ -1756,4 +1763,209 @@ def add_extraction_to_graph(body: dict):
         "entity_name": name,
         "doc_type":    doc_type_str,
         "graph_stats": _graph_builder.stats(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# EXPLORE ENDPOINTS — households and conflicts
+# ---------------------------------------------------------------------------
+
+@app.get("/explore/households")
+def get_households():
+    """
+    Return all detected same-household groups (people at the same address).
+
+    A household = 2+ different people with matching addresses.
+    """
+    from ..core.household import HouseholdDetector
+    graph     = _graph_builder.get_graph()
+    detector  = HouseholdDetector(graph)
+    households = detector.detect(min_members=2)
+
+    return {
+        "households": [
+            {
+                "address":      h.address,
+                "member_count": h.member_count,
+                "members": [
+                    {
+                        "name":        m["name"],
+                        "doc_type":    m["doc_type"],
+                        "source_file": m["source_file"],
+                        "entity_id":   m["entity_id"],
+                    }
+                    for m in h.members
+                ],
+            }
+            for h in households
+        ],
+        "total_households": len(households),
+        "total_people_in_households": sum(h.member_count for h in households),
+    }
+
+
+@app.get("/explore/conflicts")
+def get_conflicts():
+    """
+    Return all detected data conflicts between linked entities.
+
+    Each conflict is a mismatch in an attribute between two entities
+    that have been identified as the same person (same_as edge).
+
+    Conflicts are explorable — click through to see the full entity data.
+    """
+    from ..core.contradiction import ContradictionDetector
+    graph    = _graph_builder.get_graph()
+    detector = ContradictionDetector(graph)
+    conflicts = detector.detect()
+
+    # Enrich conflicts with full entity info
+    result = []
+    for c in conflicts:
+        entity_a = graph.nodes.get(c.entity_id_a, {})
+        entity_b = graph.nodes.get(c.entity_id_b, {})
+
+        # Get provenance for each conflicting value
+        def get_line_info(node_id: str) -> dict:
+            for neighbor in graph.neighbors(node_id):
+                edge = graph.edges.get((node_id, neighbor)) or graph.edges.get((neighbor, node_id), {})
+                if edge.get("edge_type") == "mentions":
+                    return {
+                        "line_number": edge.get("line_number", 0),
+                        "line_text":   edge.get("line_text", ""),
+                    }
+            return {"line_number": 0, "line_text": ""}
+
+        prov_a = get_line_info(c.entity_id_a)
+        prov_b = get_line_info(c.entity_id_b)
+
+        result.append({
+            "conflict_type":  c.conflict_type,
+            "attribute_key":  c.attribute_key,
+            "severity":       c.severity,
+            "entity_a": {
+                "entity_id":   c.entity_id_a,
+                "name":        entity_a.get("name", ""),
+                "doc_type":    entity_a.get("doc_type", ""),
+                "source_file": entity_a.get("source_filename", c.source_doc_a),
+                "value":       c.value_a,
+                "line_number": prov_a["line_number"],
+                "line_text":   prov_a["line_text"],
+                "attributes":  {k: v for k, v in (entity_a.get("attributes", {}) or {}).items()
+                                if not k.startswith("_")},
+            },
+            "entity_b": {
+                "entity_id":   c.entity_id_b,
+                "name":        entity_b.get("name", ""),
+                "doc_type":    entity_b.get("doc_type", ""),
+                "source_file": entity_b.get("source_filename", c.source_doc_b),
+                "value":       c.value_b,
+                "line_number": prov_b["line_number"],
+                "line_text":   prov_b["line_text"],
+                "attributes":  {k: v for k, v in (entity_b.get("attributes", {}) or {}).items()
+                                if not k.startswith("_")},
+            },
+        })
+
+    # Group by severity
+    critical = [r for r in result if r["severity"] == "critical"]
+    minor    = [r for r in result if r["severity"] == "minor"]
+
+    return {
+        "conflicts":        result,
+        "total":            len(result),
+        "critical_count":   len(critical),
+        "minor_count":      len(minor),
+        "critical":         critical,
+        "minor":            minor,
+    }
+
+
+@app.get("/explore/entity/{entity_id}")
+def get_entity_detail(entity_id: str):
+    """
+    Get full details for a specific entity — all attributes, documents,
+    same_as links, conflicts, and household connections.
+    """
+    graph = _graph_builder.get_graph()
+
+    if entity_id not in graph:
+        raise HTTPException(404, detail=f"Entity {entity_id} not found")
+
+    data = graph.nodes.get(entity_id, {})
+    if data.get("node_type") != "entity":
+        raise HTTPException(400, detail="Not an entity node")
+
+    # Find all connected entities
+    same_as_links = []
+    conflict_links = []
+    lives_with_links = []
+    source_documents = []
+
+    for neighbor in graph.neighbors(entity_id):
+        edge = graph.edges.get((entity_id, neighbor)) or graph.edges.get((neighbor, entity_id), {})
+        edge_type = edge.get("edge_type", "")
+        n_data = graph.nodes.get(neighbor, {})
+
+        if edge_type == "same_as":
+            same_as_links.append({
+                "entity_id":   neighbor,
+                "name":        n_data.get("name", ""),
+                "doc_type":    n_data.get("doc_type", ""),
+                "source_file": n_data.get("source_filename", ""),
+                "confidence":  edge.get("confidence", 0),
+            })
+        elif edge_type == "conflict":
+            same_as_links.append({
+                "entity_id":     neighbor,
+                "name":          n_data.get("name", ""),
+                "conflict_type": edge.get("conflict_type", ""),
+                "attribute_key": edge.get("attribute_key", ""),
+                "value_a":       edge.get("value_a", ""),
+                "value_b":       edge.get("value_b", ""),
+                "severity":      edge.get("severity", ""),
+            })
+            conflict_links.append({
+                "entity_id":     neighbor,
+                "name":          n_data.get("name", ""),
+                "conflict_type": edge.get("conflict_type", ""),
+                "attribute_key": edge.get("attribute_key", ""),
+                "value_a":       edge.get("value_a", ""),
+                "value_b":       edge.get("value_b", ""),
+                "severity":      edge.get("severity", ""),
+            })
+        elif edge_type == "lives_with":
+            lives_with_links.append({
+                "entity_id":   neighbor,
+                "name":        n_data.get("name", ""),
+                "doc_type":    n_data.get("doc_type", ""),
+                "source_file": n_data.get("source_filename", ""),
+                "address":     edge.get("address", ""),
+            })
+        elif edge_type == "mentions":
+            doc_data = graph.nodes.get(neighbor, {})
+            if doc_data.get("node_type") == "document":
+                source_documents.append({
+                    "doc_id":    neighbor,
+                    "filename":  doc_data.get("filename", ""),
+                    "doc_type":  doc_data.get("doc_type", ""),
+                    "doc_date":  doc_data.get("doc_date", ""),
+                    "line_number": edge.get("line_number", 0),
+                    "line_text":   edge.get("line_text", ""),
+                })
+
+    return {
+        "entity_id":       entity_id,
+        "name":            data.get("name", ""),
+        "entity_type":     data.get("entity_type", ""),
+        "doc_type":        data.get("doc_type", ""),
+        "source_filename": data.get("source_filename", ""),
+        "confidence":      data.get("confidence", 0),
+        "extractor_model": data.get("extractor_model", ""),
+        "attributes":      {k: v for k, v in (data.get("attributes", {}) or {}).items()
+                            if not k.startswith("_")},
+        "source_documents":  source_documents,
+        "same_as_links":     same_as_links,
+        "conflict_links":    conflict_links,
+        "lives_with_links":  lives_with_links,
     }

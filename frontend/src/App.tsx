@@ -20,6 +20,7 @@ import QueryPanel         from './components/QueryPanel';
 import TestDatasetPanel   from './components/TestDatasetPanel';
 import UiPathLivePanel    from './components/UiPathLivePanel';
 import PersonalUploadPanel from './components/PersonalUploadPanel';
+import ExplorePanel        from './components/ExplorePanel';
 import { getGraphStats, resetGraph } from './api/client';
 import type { GraphStats, IngestResponse, QueryResult } from './types';
 
@@ -169,6 +170,9 @@ const App: React.FC = () => {
 
       {/* ---- Graph visualization ---- */}
       <GraphVisualization refreshTrigger={refreshCount} />
+
+      {/* ---- Explore: Households + Conflicts ---- */}
+      <ExplorePanel refreshTrigger={refreshCount} />
     </div>
   );
 };
