@@ -614,3 +614,119 @@ def ingest_test_file(body: dict):
 
     request = IngestRequest(paths=[str(p)], extractor=extractor)
     return ingest(request)
+
+
+# ---------------------------------------------------------------------------
+# UIPATH LIVE API ENDPOINT
+# ---------------------------------------------------------------------------
+
+@app.post("/uipath/extract")
+async def uipath_extract(
+    file: UploadFile = File(...),
+    extractor: str = "identity_documents",
+):
+    """
+    Send a real scanned PDF/image to the UiPath Document Understanding API.
+    Returns extracted fields and ingests into the knowledge graph.
+
+    Requires UIPATH_CLIENT_ID and UIPATH_CLIENT_SECRET in .env
+
+    Supported extractors:
+        identity_documents — passports, licenses, national IDs
+        invoices           — invoices
+        receipts           — receipts
+        contracts          — contracts
+    """
+    # Check credentials exist
+    if not os.getenv("UIPATH_CLIENT_ID") or not os.getenv("UIPATH_CLIENT_SECRET"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "UiPath credentials not configured. "
+                "Add UIPATH_CLIENT_ID and UIPATH_CLIENT_SECRET to your .env file. "
+                "Get them from: cloud.uipath.com → Admin → External Applications"
+            )
+        )
+
+    from ..extraction.uipath_api_connector import UiPathAPIConnector, UiPathAPIError
+
+    connector = UiPathAPIConnector.from_env()
+
+    # Save uploaded file to temp location
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / file.filename
+        with open(tmp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        try:
+            # Call UiPath API — get back a .json file
+            json_path = connector.extract_to_json(
+                file_path  = tmp_path,
+                extractor  = extractor,
+                output_dir = tmpdir,
+            )
+
+            # Ingest the resulting JSON into our pipeline
+            from ..extraction.uipath_extractor import UiPathExtractor
+            ue = UiPathExtractor()
+            doc, entities = ue.extract(json_path)
+
+            if doc is None:
+                raise HTTPException(500, detail="UiPath extraction returned no document")
+
+            _documents[doc.doc_id] = doc
+            _graph_builder.add_document(doc)
+            _embedding_engine.embed_entities(entities)
+            for entity in entities:
+                _graph_builder.add_entity(entity)
+
+            _run_entity_resolution()
+            _get_query_engine()
+
+            # Return the extracted fields for display
+            pipeline_json = json.loads(json_path.read_text())
+
+        except UiPathAPIError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            logger.error("UiPath extraction error: %s", e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "filename":          file.filename,
+        "extractor":         extractor,
+        "document_type":     pipeline_json.get("document_type"),
+        "confidence":        pipeline_json.get("confidence"),
+        "fields":            pipeline_json.get("fields", {}),
+        "entities_extracted": len(entities),
+        "graph_stats":        _graph_builder.stats(),
+    }
+
+
+@app.get("/uipath/status")
+def uipath_status():
+    """Check if UiPath credentials are configured and connection works."""
+    client_id = os.getenv("UIPATH_CLIENT_ID", "")
+    has_creds  = bool(client_id and os.getenv("UIPATH_CLIENT_SECRET"))
+
+    if not has_creds:
+        return {
+            "configured": False,
+            "message": (
+                "UiPath credentials not set. "
+                "Add UIPATH_CLIENT_ID and UIPATH_CLIENT_SECRET to .env"
+            )
+        }
+
+    try:
+        from ..extraction.uipath_api_connector import UiPathAPIConnector
+        connector = UiPathAPIConnector.from_env()
+        connected = connector.test_connection()
+        return {
+            "configured": True,
+            "connected":  connected,
+            "client_id":  client_id[:8] + "...",
+            "message":    "UiPath API connected ✓" if connected else "Credentials set but connection failed",
+        }
+    except Exception as e:
+        return {"configured": True, "connected": False, "message": str(e)}

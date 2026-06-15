@@ -18,6 +18,7 @@ import GraphVisualization from './components/GraphVisualization';
 import ProvenanceList     from './components/ProvenanceList';
 import QueryPanel         from './components/QueryPanel';
 import TestDatasetPanel   from './components/TestDatasetPanel';
+import UiPathLivePanel    from './components/UiPathLivePanel';
 import { getGraphStats, resetGraph } from './api/client';
 import type { GraphStats, IngestResponse, QueryResult } from './types';
 
@@ -145,6 +146,7 @@ const App: React.FC = () => {
             extractionMode={extractionMode}
             onIngestComplete={handleIngest}
           />
+          <UiPathLivePanel onIngestComplete={handleIngest} />
           <EntityTable refreshTrigger={refreshCount} />
         </div>
 
