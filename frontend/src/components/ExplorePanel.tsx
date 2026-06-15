@@ -101,8 +101,18 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
   const [households, setHouseholds]     = useState<Household[]>([]);
   const [conflicts,  setConflicts]      = useState<Conflict[]>([]);
   const [loading,    setLoading]        = useState(false);
+  const [resolving,  setResolving]      = useState(false);
   const [selectedEntity, setSelected]   = useState<EntityDetail | null>(null);
   const [expandedCards, setExpanded]    = useState<Set<number>>(new Set());
+
+  const resolve = async () => {
+    setResolving(true);
+    try {
+      await fetch(`${API_BASE}/explore/resolve`, { method: 'POST' });
+      await load(activeTab);
+    } catch { /* ignore */ }
+    setResolving(false);
+  };
 
   const load = async (tab: 'households' | 'conflicts') => {
     setLoading(true);
@@ -135,8 +145,16 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
 
   return (
     <div style={S.container}>
-      <div style={{ fontSize: '15px', fontWeight: 700, color: '#eee', marginBottom: '12px' }}>
+      <div style={{ fontSize: '15px', fontWeight: 700, color: '#eee', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         🔎 Explore Graph
+        <button
+          style={{ padding: '4px 12px', background: resolving ? '#555' : '#9B59B6', border: 'none', borderRadius: '5px', color: '#fff', fontSize: '11px', cursor: resolving ? 'default' : 'pointer', fontWeight: 600 }}
+          onClick={resolve}
+          disabled={resolving}
+          title="Run entity resolution + conflict detection"
+        >
+          {resolving ? '⏳ Resolving...' : '🔄 Run Resolution'}
+        </button>
       </div>
 
       <div style={S.tabs}>
@@ -185,7 +203,11 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
       {/* Conflicts Tab */}
       {!loading && activeTab === 'conflicts' && (
         conflicts.length === 0
-          ? <div style={S.empty}>No conflicts detected.<br/>Conflicts appear when the same person has different values in different documents.</div>
+          ? <div style={S.empty}>No conflicts detected.<br/>Conflicts appear when the same person has different values in different documents.<br/><br/>
+              <button style={{ padding: '6px 14px', background: '#9B59B6', border: 'none', borderRadius: '5px', color: '#fff', cursor: 'pointer', fontSize: '12px' }} onClick={resolve}>
+                🔄 Run Resolution to detect conflicts
+              </button>
+            </div>
           : conflicts.map((c, i) => (
             <div key={i} style={S.conflictCard(c.severity)}>
               <div style={S.conflictTitle}>

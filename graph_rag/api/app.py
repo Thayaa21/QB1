@@ -987,12 +987,24 @@ def ingest_test_file(body: dict):
 @app.post("/testdata/resolve")
 def resolve_after_batch():
     """
-    Run entity resolution after batch-ingesting test dataset files.
+    Run entity resolution + contradiction detection + household detection.
     Call this ONCE after you've finished ingesting multiple files.
     """
     _run_entity_resolution()
     _get_query_engine()
-    return {"message": "Entity resolution complete", "graph_stats": _graph_builder.stats()}
+    stats = _graph_builder.stats()
+    return {
+        "message":    "Resolution complete",
+        "graph_stats": stats,
+    }
+
+
+@app.post("/explore/resolve")
+def explore_resolve():
+    """Trigger full resolution (same as /testdata/resolve) — called from Explore panel."""
+    _run_entity_resolution()
+    _get_query_engine()
+    return {"message": "done", "graph_stats": _graph_builder.stats()}
 
 
 # ---------------------------------------------------------------------------
