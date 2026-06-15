@@ -451,55 +451,62 @@ def smart_query_endpoint(request: QueryRequest):
     is_open_ended = (any(kw in question for kw in open_ended_keywords) or not names)
 
     if is_open_ended:
-        # Aggregate answer across all entities
-        summary_lines = []
-        for nid, data in all_entity_nodes:
-            attrs = data.get("attributes", {}) or {}
-            name  = data.get("name", "Unknown")
-            doc_t = data.get("doc_type", "")
-            src   = data.get("source_filename", "")
-            relevant_facts = []
-            for k, v in attrs.items():
-                if k.startswith("_"):
-                    continue
-                if any(kw in question for kw in ["license", "licence"]) and "license" in k:
-                    relevant_facts.append(f"{k}: {v}")
-                elif any(kw in question for kw in ["dob", "birth", "born"]) and "dob" in k:
-                    relevant_facts.append(f"dob: {v}")
-                elif any(kw in question for kw in ["passport"]) and "passport" in k:
-                    relevant_facts.append(f"passport_number: {v}")
-                elif any(kw in question for kw in ["address"]) and "address" in k:
-                    relevant_facts.append(f"address: {v}")
-            if relevant_facts:
-                summary_lines.append(f"• **{name}** ({doc_t}, {src}): {', '.join(relevant_facts)}")
-
-        if not summary_lines:
-            # Generic summary — list everyone
-            for nid, data in all_entity_nodes:
-                name  = data.get("name", "Unknown")
-                doc_t = data.get("doc_type", "")
-                src   = data.get("source_filename", "")
-                summary_lines.append(f"• {name} — {doc_t} ({src})")
-
-        # Build answer directly without LLM (fast, no timeout risk)
-        total = len(all_entity_nodes)
-        unique_names = list(dict.fromkeys(data.get("name","") for _, data in all_entity_nodes))
-        doc_types = {}
+        # Build compact structured context for the LLM
+        unique_names = list(dict.fromkeys(
+            data.get("name", "") for _, data in all_entity_nodes if data.get("name")
+        ))
+        doc_type_counts: dict = {}
         for _, data in all_entity_nodes:
             dt = data.get("doc_type", "GENERIC")
-            doc_types[dt] = doc_types.get(dt, 0) + 1
+            doc_type_counts[dt] = doc_type_counts.get(dt, 0) + 1
 
-        answer_parts = [f"Graph contains {total} entity records from {len(unique_names)} unique people."]
-        answer_parts.append("Document types: " + ", ".join(f"{v}× {k}" for k, v in doc_types.items()))
-        if summary_lines:
-            answer_parts.append("\nDetails:\n" + "\n".join(summary_lines[:15]))
-        answer = "\n".join(answer_parts)
+        # Build a concise data summary
+        person_summaries = []
+        seen_names: set = set()
+        for nid, data in all_entity_nodes:
+            name = data.get("name", "Unknown")
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            attrs = {k: v for k, v in (data.get("attributes", {}) or {}).items()
+                     if not k.startswith("_")}
+            person_summaries.append(f"{name}: {attrs}")
+
+        context = (
+            f"Total entity records: {len(all_entity_nodes)}\n"
+            f"Unique people: {len(unique_names)}\n"
+            f"Names: {', '.join(unique_names)}\n"
+            f"Document types: {doc_type_counts}\n"
+        )
+
+        # Use LLM to answer naturally, with fallback
+        llm = _get_llm()
+        prompt = (
+            f"Answer the following question about a document database. "
+            f"Be concise and natural — answer as a helpful assistant.\n\n"
+            f"Question: {request.question}\n\n"
+            f"Database summary:\n{context}\n\n"
+            f"Answer:"
+        )
+        try:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(llm.complete, prompt, 0.0)
+                answer = future.result(timeout=20)
+        except Exception:
+            # Fallback: direct structured answer
+            answer = (
+                f"There are {len(unique_names)} people in the database: "
+                f"{', '.join(unique_names)}.\n"
+                f"Total records: {len(all_entity_nodes)} "
+                f"({', '.join(f'{v} {k}' for k, v in doc_type_counts.items())})"
+            )
 
         return {
             "type":     "summary",
             "answer":   answer,
             "count":    len(all_entity_nodes),
-            "entities": summary_lines[:20],
+            "entities": [f"• {n}" for n in unique_names],
             "options":  [],
         }
 
@@ -614,18 +621,20 @@ def smart_query_endpoint(request: QueryRequest):
 
     # Ask LLM to synthesize answer from context
     context_str = "\n".join(context_lines[:30])
+    llm = _get_llm()
     try:
         answer_prompt = (
-            f"Answer this question using ONLY the data below. "
-            f"Be specific. Include values directly.\n\n"
+            f"Answer this question naturally and specifically. "
+            f"Use the data below. Be concise but complete.\n\n"
             f"Question: {request.question}\n\n"
-            f"Data about {full_name}:\n{context_str}"
+            f"Data about {full_name}:\n{context_str}\n\n"
+            f"Answer:"
         )
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(llm.complete, answer_prompt, 0.0)
             try:
-                answer = future.result(timeout=15)  # 15s max for synthesis
+                answer = future.result(timeout=20)
             except concurrent.futures.TimeoutError:
                 raise Exception("LLM timeout")
     except Exception:
