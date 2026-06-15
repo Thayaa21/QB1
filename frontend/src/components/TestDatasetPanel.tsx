@@ -145,6 +145,7 @@ const TestDatasetPanel: React.FC<Props> = ({ extractionMode, onIngestComplete })
   const [done,        setDone]        = useState<Set<string>>(new Set());
   const [errors,      setErrors]      = useState<Record<string, string>>({});
   const [log,         setLog]         = useState<string[]>([]);
+  const [batchRunning, setBatchRunning] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/testdata`)
@@ -182,13 +183,40 @@ const TestDatasetPanel: React.FC<Props> = ({ extractionMode, onIngestComplete })
   };
 
   const ingestAll = async (person: TestPerson) => {
-    // Filter to right type based on extraction mode
     const relevant = person.files.filter(f =>
       extractionMode === 'uipath' ? f.type === 'json' : f.type === 'txt'
     );
     for (const file of relevant) {
       await ingestFile(file);
     }
+  };
+
+  // Ingest ALL people at once (UiPath mode only — fast)
+  const ingestEverything = async () => {
+    if (extractionMode !== 'uipath') {
+      appendLog('⚠ Switch to UiPath mode for fast batch ingest');
+      return;
+    }
+    setBatchRunning(true);
+    appendLog('Starting batch ingest (UiPath mode)...');
+    const allFiles = people.flatMap(p =>
+      p.files.filter(f => f.type === 'json' && !done.has(f.path))
+    );
+    appendLog(`Ingesting ${allFiles.length} files...`);
+    for (const file of allFiles) {
+      await ingestFile(file);
+    }
+    // Run entity resolution once at the end
+    appendLog('Running entity resolution...');
+    try {
+      const r = await fetch(`${API_BASE}/testdata/resolve`, { method: 'POST' });
+      const d = await r.json();
+      appendLog(`✓ Resolution done. Graph: ${JSON.stringify(d.graph_stats)}`);
+      onIngestComplete?.(d);
+    } catch {
+      appendLog('Resolution failed');
+    }
+    setBatchRunning(false);
   };
 
   const toggleExpand = (name: string) => {
@@ -214,6 +242,28 @@ const TestDatasetPanel: React.FC<Props> = ({ extractionMode, onIngestComplete })
   return (
     <div style={s.container}>
       <div style={s.title}>🧪 Test Dataset — Ingest One by One</div>
+
+      {/* Speed tip + Ingest All button */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '11px', color: extractionMode === 'uipath' ? '#27AE60' : '#E67E22' }}>
+          {extractionMode === 'uipath'
+            ? '⚡ UiPath mode — fast (~0.1s/file)'
+            : '⚠ LangChain mode — slow (~30s/file). Switch to UiPath for speed.'}
+        </span>
+        {extractionMode === 'uipath' && (
+          <button
+            style={{
+              padding: '4px 12px', background: batchRunning ? '#555' : '#9B59B6',
+              border: 'none', borderRadius: '5px', color: '#fff', fontSize: '11px',
+              cursor: batchRunning ? 'default' : 'pointer', fontWeight: 600, marginLeft: 'auto',
+            }}
+            onClick={ingestEverything}
+            disabled={batchRunning}
+          >
+            {batchRunning ? '⏳ Ingesting...' : '⚡ Ingest ALL (UiPath)'}
+          </button>
+        )}
+      </div>
 
       <input
         style={s.filter}

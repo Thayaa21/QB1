@@ -915,11 +915,9 @@ def list_test_data():
 def ingest_test_file(body: dict):
     """
     Ingest a single file from the test dataset by its path.
+    Skips entity resolution for speed — call /testdata/resolve when done.
 
     Body: {"path": "docs/people/alice_chen/birth_certificate.txt", "extractor": "langchain"}
-
-    This lets the frontend upload test files one by one without the user
-    needing to find files on disk.
     """
     file_path = body.get("path", "")
     extractor = body.get("extractor", "langchain").lower()
@@ -928,8 +926,66 @@ def ingest_test_file(body: dict):
     if not p.exists():
         raise HTTPException(404, detail=f"File not found: {file_path}")
 
-    request = IngestRequest(paths=[str(p)], extractor=extractor)
-    return ingest(request)
+    extractor_mode = extractor
+    if extractor_mode not in ("langchain", "uipath"):
+        extractor_mode = "langchain"
+
+    docs_ingested  = 0
+    entities_total = 0
+
+    if extractor_mode == "uipath":
+        from ..extraction.uipath_extractor import UiPathExtractor
+        ue = UiPathExtractor()
+        doc, entities = ue.extract(str(p))
+        if doc:
+            _documents[doc.doc_id] = doc
+            _graph_builder.add_document(doc)
+            _embedding_engine.embed_entities(entities)
+            for entity in entities:
+                _graph_builder.add_entity(entity)
+            docs_ingested  = 1
+            entities_total = len(entities)
+    else:
+        from ..core.loader import DocumentLoader
+        from ..extraction.classifier import DocumentClassifier
+        from ..extraction.langchain_extractor import LangChainExtractor
+        llm        = _get_llm()
+        loader     = DocumentLoader()
+        classifier = DocumentClassifier(llm)
+        extractor_obj = LangChainExtractor(llm, model_name=getattr(llm, "model_name", "unknown"))
+        doc = loader.load_file(str(p))
+        if doc:
+            doc_type, schema = classifier.classify(doc)
+            entities = extractor_obj.extract(doc, schema)
+            _documents[doc.doc_id] = doc
+            _graph_builder.add_document(doc)
+            _embedding_engine.embed_entities(entities)
+            for entity in entities:
+                _graph_builder.add_entity(entity)
+            docs_ingested  = 1
+            entities_total = len(entities)
+
+    # NOTE: deliberately NOT calling _run_entity_resolution() here
+    # Resolution is expensive — call POST /testdata/resolve when all files are ingested
+    _get_query_engine()
+
+    return {
+        "documents_ingested": docs_ingested,
+        "entities_extracted": entities_total,
+        "extraction_mode":    extractor_mode,
+        "graph_stats":        _graph_builder.stats(),
+    }
+
+
+@app.post("/testdata/resolve")
+def resolve_after_batch():
+    """
+    Run entity resolution after batch-ingesting test dataset files.
+    Call this ONCE after you've finished ingesting multiple files.
+    """
+    _run_entity_resolution()
+    _get_query_engine()
+    return {"message": "Entity resolution complete", "graph_stats": _graph_builder.stats()}
 
 
 # ---------------------------------------------------------------------------
