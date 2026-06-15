@@ -1005,24 +1005,43 @@ def ingest_test_file(body: dict):
 @app.post("/testdata/resolve")
 def resolve_after_batch():
     """
-    Run entity resolution + contradiction detection + household detection.
-    Call this ONCE after you've finished ingesting multiple files.
+    Run entity resolution in the background (non-blocking).
+    Returns immediately — check /graph/stats to see when same_as_edges increase.
     """
-    _run_entity_resolution()
-    _get_query_engine()
-    stats = _graph_builder.stats()
+    import threading
+
+    def _resolve_bg():
+        try:
+            _run_entity_resolution()
+            _get_query_engine()
+            logger.info("Background resolution complete")
+        except Exception as e:
+            logger.error("Background resolution failed: %s", e)
+
+    t = threading.Thread(target=_resolve_bg, daemon=True)
+    t.start()
     return {
-        "message":    "Resolution complete",
-        "graph_stats": stats,
+        "message":    "Resolution started in background",
+        "hint":       "Poll GET /graph/stats — same_as_edges will increase when done",
+        "graph_stats": _graph_builder.stats(),
     }
 
 
 @app.post("/explore/resolve")
 def explore_resolve():
-    """Trigger full resolution (same as /testdata/resolve) — called from Explore panel."""
-    _run_entity_resolution()
-    _get_query_engine()
-    return {"message": "done", "graph_stats": _graph_builder.stats()}
+    """Trigger resolution (background) — called from Explore panel."""
+    import threading
+
+    def _resolve_bg():
+        try:
+            _run_entity_resolution()
+            _get_query_engine()
+        except Exception as e:
+            logger.error("Background resolution failed: %s", e)
+
+    t = threading.Thread(target=_resolve_bg, daemon=True)
+    t.start()
+    return {"message": "Resolution running in background", "graph_stats": _graph_builder.stats()}
 
 
 # ---------------------------------------------------------------------------

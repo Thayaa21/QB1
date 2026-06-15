@@ -109,6 +109,22 @@ const ExplorePanel: React.FC<Props> = ({ refreshTrigger = 0 }) => {
     setResolving(true);
     try {
       await fetch(`${API_BASE}/explore/resolve`, { method: 'POST' });
+      // Poll until same_as_edges stabilize
+      let prev = -1;
+      let stable = 0;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const r = await fetch(`${API_BASE}/graph/stats`);
+        const stats = await r.json();
+        const current = stats.same_as_edges || 0;
+        if (current === prev) {
+          stable++;
+          if (stable >= 2) break; // stable for 2 polls = done
+        } else {
+          stable = 0;
+        }
+        prev = current;
+      }
       await load(activeTab);
     } catch { /* ignore */ }
     setResolving(false);

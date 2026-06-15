@@ -206,12 +206,22 @@ const TestDatasetPanel: React.FC<Props> = ({ extractionMode, onIngestComplete })
     for (const file of allFiles) {
       await ingestFile(file);
     }
-    // Run entity resolution once at the end
-    appendLog('Running entity resolution...');
+    // Run entity resolution in background — poll until stable
+    appendLog('Running entity resolution in background...');
     try {
-      const r = await fetch(`${API_BASE}/testdata/resolve`, { method: 'POST' });
-      const d = await r.json();
-      appendLog(`✓ Resolution done. Graph: ${JSON.stringify(d.graph_stats)}`);
+      await fetch(`${API_BASE}/testdata/resolve`, { method: 'POST' });
+      let prev = -1; let stable = 0;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const r = await fetch(`${API_BASE}/graph/stats`);
+        const stats = await r.json();
+        const curr = stats.same_as_edges || 0;
+        if (curr === prev) { stable++; if (stable >= 2) break; } else { stable = 0; }
+        prev = curr;
+      }
+      const r2 = await fetch(`${API_BASE}/graph/stats`);
+      const d = await r2.json();
+      appendLog(`✓ Resolution done. Graph: ${JSON.stringify(d)}`);
       onIngestComplete?.(d);
     } catch {
       appendLog('Resolution failed');
