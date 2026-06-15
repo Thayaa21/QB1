@@ -730,3 +730,228 @@ def uipath_status():
         }
     except Exception as e:
         return {"configured": True, "connected": False, "message": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# PERSONAL DOCUMENT UPLOAD — saves to docs/people/{person_name}/
+# ---------------------------------------------------------------------------
+
+@app.post("/person/upload")
+async def upload_personal_document(
+    file:        UploadFile = File(...),
+    person_name: str        = "unknown_person",
+    extractor:   str        = "langchain",
+):
+    """
+    Upload a personal document (passport, license, etc.) using either
+    the LangChain (LLM) or UiPath (API) extractor.
+
+    Saves the extracted JSON to docs/people/{person_name}/ so it sits
+    alongside other people in the test dataset.
+
+    Args:
+        file        — PDF, PNG, JPG, or TXT file to process
+        person_name — folder name under docs/people/ (e.g. "thayaananthan_kanagaraj")
+        extractor   — "langchain" (use local LLM) or "uipath" (use UiPath API)
+
+    Returns:
+        Extracted fields + entity info + path where JSON was saved
+    """
+    import re
+
+    # Sanitize person_name: lowercase, spaces to underscores, no special chars
+    person_name = re.sub(r"[^a-z0-9_]", "_", person_name.lower().strip())
+    if not person_name or person_name == "_":
+        raise HTTPException(400, detail="Invalid person_name")
+
+    # Create person folder inside docs/people/
+    person_dir = Path("docs") / "people" / person_name
+    person_dir.mkdir(parents=True, exist_ok=True)
+
+    extractor_mode = extractor.lower().strip()
+    if extractor_mode not in ("langchain", "uipath"):
+        raise HTTPException(400, detail="extractor must be 'langchain' or 'uipath'")
+
+    # Save uploaded file temporarily
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / file.filename
+        with open(tmp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        doc      = None
+        entities = []
+        saved_json_path = None
+        doc_type_str    = "GENERIC"
+
+        # ---- UiPath extraction ----
+        if extractor_mode == "uipath":
+            if not os.getenv("UIPATH_CLIENT_ID") or not os.getenv("UIPATH_CLIENT_SECRET"):
+                raise HTTPException(400, detail="UiPath credentials not set in .env")
+
+            from ..extraction.uipath_api_connector import UiPathAPIConnector, UiPathAPIError
+            from ..extraction.uipath_extractor import UiPathExtractor
+
+            # Determine extractor type from file content / name
+            uipath_extractor_type = "identity_documents"  # passports, licenses, IDs
+
+            connector = UiPathAPIConnector.from_env()
+            try:
+                json_path = connector.extract_to_json(
+                    file_path   = tmp_path,
+                    extractor   = uipath_extractor_type,
+                    output_dir  = person_dir,  # save directly to person folder
+                )
+                # Rename to match document type
+                stem = Path(file.filename).stem.lower().replace(" ", "_")
+                target_path = person_dir / f"{stem}_uipath.json"
+                json_path.rename(target_path)
+                saved_json_path = str(target_path)
+
+                # Parse with UiPath extractor
+                ue = UiPathExtractor()
+                doc, entities = ue.extract(target_path)
+                if doc:
+                    doc_type_str = doc.doc_type.value
+
+            except UiPathAPIError as e:
+                raise HTTPException(502, detail=f"UiPath API error: {e}")
+
+        # ---- LangChain extraction ----
+        else:
+            from ..core.loader import DocumentLoader
+            from ..extraction.classifier import DocumentClassifier
+            from ..extraction.langchain_extractor import LangChainExtractor
+
+            llm        = _get_llm()
+            loader     = DocumentLoader()
+            classifier = DocumentClassifier(llm)
+            lc_extractor = LangChainExtractor(
+                llm, model_name=getattr(llm, "model_name", "unknown")
+            )
+
+            doc = loader.load_file(tmp_path)
+            if doc is None:
+                raise HTTPException(400, detail=f"Could not read file: {file.filename}")
+
+            doc_type, schema = classifier.classify(doc)
+            entities = lc_extractor.extract(doc, schema)
+            doc_type_str = doc_type.value
+
+            # Also save a copy of the .txt and extracted JSON to person folder
+            # Copy the original file
+            dest_txt = person_dir / file.filename
+            shutil.copy2(tmp_path, dest_txt)
+
+            # Save extracted result as JSON
+            stem = Path(file.filename).stem.lower().replace(" ", "_")
+            json_data = {
+                "document_type": doc_type_str,
+                "confidence":    entities[0].confidence if entities else 0.0,
+                "source_file":   file.filename,
+                "fields": {
+                    k: {
+                        "value":        v,
+                        "confidence":   entities[0].confidence if entities else 0.0,
+                        "page":         1,
+                        "bounding_box": [
+                            entities[0].char_offset_start,
+                            entities[0].line_number,
+                            entities[0].char_offset_end,
+                            entities[0].line_number,
+                        ] if entities else [0, 0, 0, 0],
+                    }
+                    for k, v in (entities[0].attributes.items() if entities else {})
+                }
+            }
+            saved_json_path = str(person_dir / f"{stem}.json")
+            Path(saved_json_path).write_text(
+                __import__("json").dumps(json_data, indent=2), encoding="utf-8"
+            )
+
+    # ---- Add to graph ----
+    if doc and entities:
+        _documents[doc.doc_id] = doc
+        _graph_builder.add_document(doc)
+        _embedding_engine.embed_entities(entities)
+        for entity in entities:
+            # Tag with person_name so we can find them later
+            entity.attributes["_person_folder"] = person_name
+            _graph_builder.add_entity(entity)
+
+        # Run resolution to link this document to any existing ones for same person
+        _run_entity_resolution()
+        _get_query_engine()
+
+    # Return summary
+    extracted_attrs = entities[0].attributes if entities else {}
+    extracted_attrs.pop("_person_folder", None)
+
+    return {
+        "person_name":       person_name,
+        "person_folder":     str(person_dir),
+        "filename":          file.filename,
+        "extractor":         extractor_mode,
+        "document_type":     doc_type_str,
+        "saved_json":        saved_json_path,
+        "extracted_fields":  extracted_attrs,
+        "entities_extracted": len(entities),
+        "entity_name":        entities[0].name if entities else None,
+        "graph_stats":        _graph_builder.stats(),
+    }
+
+
+@app.get("/person/{person_name}")
+def get_person_info(person_name: str):
+    """
+    Get all graph information about a specific person by folder name.
+    Returns all entities, documents, same_as links, and conflicts.
+    """
+    graph = _graph_builder.get_graph()
+
+    # Find all entities belonging to this person
+    person_entities = []
+    for node_id, data in graph.nodes(data=True):
+        if data.get("node_type") != "entity":
+            continue
+        attrs = data.get("attributes", {}) or {}
+        if (attrs.get("_person_folder") == person_name
+                or person_name.lower() in data.get("name", "").lower().replace(" ", "_")):
+            person_entities.append({
+                "node_id":    node_id,
+                "name":       data.get("name"),
+                "doc_type":   data.get("doc_type"),
+                "attributes": {k: v for k, v in attrs.items() if not k.startswith("_")},
+                "source_filename": data.get("source_filename"),
+                "confidence": data.get("confidence"),
+            })
+
+    # Find same_as links between these entities
+    entity_ids = {e["node_id"] for e in person_entities}
+    links = []
+    for u, v, data in graph.edges(data=True):
+        if data.get("edge_type") == "same_as" and u in entity_ids and v in entity_ids:
+            links.append({
+                "entity_a":   u[:8],
+                "entity_b":   v[:8],
+                "confidence": data.get("confidence"),
+            })
+
+    # Find conflicts
+    conflicts = []
+    for u, v, data in graph.edges(data=True):
+        if data.get("edge_type") == "conflict" and (u in entity_ids or v in entity_ids):
+            conflicts.append({
+                "conflict_type": data.get("conflict_type"),
+                "attribute_key": data.get("attribute_key"),
+                "value_a":       data.get("value_a"),
+                "value_b":       data.get("value_b"),
+                "severity":      data.get("severity"),
+            })
+
+    return {
+        "person_name":  person_name,
+        "entities":     person_entities,
+        "same_as_links": links,
+        "conflicts":    conflicts,
+        "resolved":     len(links) > 0,
+    }

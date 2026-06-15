@@ -19,6 +19,7 @@ import ProvenanceList     from './components/ProvenanceList';
 import QueryPanel         from './components/QueryPanel';
 import TestDatasetPanel   from './components/TestDatasetPanel';
 import UiPathLivePanel    from './components/UiPathLivePanel';
+import PersonalUploadPanel from './components/PersonalUploadPanel';
 import { getGraphStats, resetGraph } from './api/client';
 import type { GraphStats, IngestResponse, QueryResult } from './types';
 
@@ -147,6 +148,7 @@ const App: React.FC = () => {
             onIngestComplete={handleIngest}
           />
           <UiPathLivePanel onIngestComplete={handleIngest} />
+          <PersonalUploadPanel onComplete={handleIngest} />
           <EntityTable refreshTrigger={refreshCount} />
         </div>
 
