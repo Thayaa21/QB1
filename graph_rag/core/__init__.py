@@ -7,6 +7,7 @@ from .models import (
 from .loader import DocumentLoader, verify_line_offsets
 from .embeddings import EmbeddingEngine
 from .graph_builder import KnowledgeGraphBuilder
+from .resolver import EntityResolver
 
 __all__ = [
     # Enums
@@ -18,4 +19,5 @@ __all__ = [
     "DocumentLoader", "verify_line_offsets",
     "EmbeddingEngine",
     "KnowledgeGraphBuilder",
+    "EntityResolver",
 ]
