@@ -268,7 +268,7 @@ class UiPathAPIConnector:
                     "grant_type":    "client_credentials",
                     "client_id":     self._client_id,
                     "client_secret": self._client_secret,
-                    "scope":         "Du.DocumentProcessing.API",
+                    "scope":         "Du.Classification.Api Du.Digitization.Api Du.Extraction.Api",
                 },
                 timeout=30,
             )
