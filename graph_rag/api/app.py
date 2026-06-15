@@ -44,6 +44,11 @@ Endpoints:
 
 import logging
 import os
+
+# Prevent HuggingFace network calls — model already cached locally
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+
 from pathlib import Path
 
 # Load .env file on startup so all os.getenv() calls work correctly

@@ -127,7 +127,7 @@ if lsof -ti:8000 &>/dev/null; then
     sleep 1
 fi
 
-$PYTHON -m uvicorn graph_rag.api.app:app \
+TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 $PYTHON -m uvicorn graph_rag.api.app:app \
     --host 0.0.0.0 \
     --port 8000 \
     --log-level warning \
