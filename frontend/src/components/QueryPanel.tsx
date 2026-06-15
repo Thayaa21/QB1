@@ -119,7 +119,7 @@ const QueryPanel: React.FC<QueryPanelProps> = ({ onResult }) => {
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder='e.g. "What is Alice Chen\'s date of birth?"'
+        placeholder="e.g. What is Alice Chen's date of birth?"
       />
       <div style={styles.row}>
         <label style={styles.label}>
