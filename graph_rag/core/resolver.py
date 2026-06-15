@@ -114,8 +114,8 @@ class EntityResolver:
         self,
         llm_provider: LLMProvider,
         embedding_engine: EmbeddingEngine,
-        auto_threshold: float = 0.75,    # lowered from 0.85 — same name + moderate semantic = same person
-        confirm_threshold: float = 0.55, # lowered from 0.60
+        auto_threshold: float = 0.65,    # lowered — catch same-name entities reliably
+        confirm_threshold: float = 0.50,  # borderline: only link if name_score >= 0.90
     ):
         """
         Args:
@@ -234,6 +234,24 @@ class EntityResolver:
         else:
             semantic_score = 0.0
 
+        # ---- Hard rule: never link if names are too different ----
+        # Even if semantic score is high, different names = different people
+        if name_score < 0.60:
+            return None
+
+        # ---- Hard rule: last name must match (or be very similar) ----
+        # "James Lee" vs "James Walker" → last names "Lee" vs "Walker" differ
+        def get_last_name(name: str) -> str:
+            parts = name.strip().split()
+            return parts[-1].lower() if parts else ""
+        last_a = get_last_name(name_a)
+        last_b = get_last_name(name_b)
+        if last_a and last_b:
+            from rapidfuzz import fuzz as _fuzz
+            last_score = _fuzz.ratio(last_a, last_b) / 100.0 if RAPIDFUZZ_AVAILABLE else (1.0 if last_a == last_b else 0.0)
+            if last_score < 0.70:
+                return None
+
         # ---- Hybrid confidence ----
         confidence = 0.4 * name_score + 0.6 * semantic_score
 
@@ -255,25 +273,20 @@ class EntityResolver:
             )
 
         elif confidence >= self._confirm_threshold:
-            # Borderline — ask LLM to confirm
-            attrs_a = str(data_a.get("attributes", {}))
-            attrs_b = str(data_b.get("attributes", {}))
-            confirmed = self._confirm_with_llm(
-                name_a, attrs_a, name_b, attrs_b
-            )
-            if confirmed:
+            # Borderline — skip LLM confirmation (too slow/unreliable)
+            # Only auto-link if name_score is very high (same name)
+            if name_score >= 0.90:
                 return ResolvedPair(
                     entity_id_a    = id_a,
                     entity_id_b    = id_b,
                     confidence     = round(confidence, 3),
                     name_score     = round(name_score, 3),
                     semantic_score = round(semantic_score, 3),
-                    llm_confirmed  = True,
+                    llm_confirmed  = False,
                 )
-            return None  # LLM said NO
+            return None
 
         else:
-            # Below minimum threshold — skip
             return None
 
     def _name_score(self, name_a: str, name_b: str) -> float:

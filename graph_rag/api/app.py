@@ -186,7 +186,16 @@ def _run_entity_resolution():
     try:
         llm = _get_llm()
         resolver = EntityResolver(llm, _embedding_engine)
-        pairs    = resolver.resolve(graph)
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(resolver.resolve, graph)
+            try:
+                pairs = future.result(timeout=30)  # max 30s for resolution
+            except concurrent.futures.TimeoutError:
+                logger.warning("Entity resolution timed out after 30s — skipping")
+                pairs = []
+
         for pair in pairs:
             _graph_builder.add_same_as_edge(
                 pair.entity_id_a, pair.entity_id_b, pair
