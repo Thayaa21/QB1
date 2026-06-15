@@ -14,24 +14,24 @@ Use this as your reference while building and learning.
 5. [DONE — Step 0: The Dataset](#5-done--step-0-the-dataset)
 6. [DONE — Step 1: Data Models](#6-done--step-1-data-models)
 7. [DONE — Step 2: LLM Provider](#7-done--step-2-llm-provider)
-8. [NEXT — Step 3: Document Loader](#8-next--step-3-document-loader)
-9. [UPCOMING — Step 4: Document Classifier](#9-upcoming--step-4-document-classifier)
-10. [UPCOMING — Step 5: LangChain Extractor](#10-upcoming--step-5-langchain-extractor)
-11. [UPCOMING — Step 6: UiPath Extractor](#11-upcoming--step-6-uipath-extractor)
-12. [UPCOMING — Step 7: Embedding Engine](#12-upcoming--step-7-embedding-engine)
-13. [UPCOMING — Step 8: Knowledge Graph Builder](#13-upcoming--step-8-knowledge-graph-builder)
-14. [UPCOMING — Step 9: Entity Resolver](#14-upcoming--step-9-entity-resolver)
-15. [UPCOMING — Step 10: Contradiction Detector](#15-upcoming--step-10-contradiction-detector)
-16. [UPCOMING — Step 11: Temporal Filter](#16-upcoming--step-11-temporal-filter)
-17. [UPCOMING — Step 12: Multi-hop Traversal](#17-upcoming--step-12-multi-hop-traversal)
-18. [UPCOMING — Step 13: Context Aggregator](#18-upcoming--step-13-context-aggregator)
-19. [UPCOMING — Step 14: Provenance Tracker](#19-upcoming--step-14-provenance-tracker)
-20. [UPCOMING — Step 15: Query Engine](#20-upcoming--step-15-query-engine)
-21. [UPCOMING — Step 16: FastAPI REST API](#21-upcoming--step-16-fastapi-rest-api)
-22. [UPCOMING — Step 17: CLI](#22-upcoming--step-17-cli)
-23. [UPCOMING — Step 18: Graph Visualizer](#23-upcoming--step-18-graph-visualizer)
-24. [UPCOMING — Step 19: React Frontend](#24-upcoming--step-19-react-frontend)
-25. [UPCOMING — Step 20: Tests](#25-upcoming--step-20-tests)
+8. [DONE — Step 3: Document Loader](#8-next--step-3-document-loader)
+9. [DONE — Step 4: Document Classifier](#9-upcoming--step-4-document-classifier)
+10. [DONE — Step 5: LangChain Extractor](#10-upcoming--step-5-langchain-extractor)
+11. [DONE — Step 6: UiPath Extractor](#11-upcoming--step-6-uipath-extractor)
+12. [DONE — Step 7: Embedding Engine](#12-upcoming--step-7-embedding-engine)
+13. [DONE — Step 8: Knowledge Graph Builder](#13-upcoming--step-8-knowledge-graph-builder)
+14. [DONE — Step 9: Entity Resolver](#14-upcoming--step-9-entity-resolver)
+15. [DONE — Step 10: Contradiction Detector](#15-upcoming--step-10-contradiction-detector)
+16. [DONE — Step 11: Temporal Filter](#16-upcoming--step-11-temporal-filter)
+17. [DONE — Step 12: Multi-hop Traversal](#17-upcoming--step-12-multi-hop-traversal)
+18. [DONE — Step 13: Context Aggregator](#18-upcoming--step-13-context-aggregator)
+19. [DONE — Step 14: Provenance Tracker](#19-upcoming--step-14-provenance-tracker)
+20. [DONE — Step 15: Query Engine](#20-upcoming--step-15-query-engine)
+21. [DONE — Step 16: FastAPI REST API](#21-upcoming--step-16-fastapi-rest-api)
+22. [DONE — Step 17: CLI](#22-upcoming--step-17-cli)
+23. [DONE — Step 18: Graph Visualizer](#23-upcoming--step-18-graph-visualizer)
+24. [DONE — Step 19: React Frontend](#24-upcoming--step-19-react-frontend)
+25. [DONE — Step 20: Tests](#25-upcoming--step-20-tests)
 26. [Key Concepts Glossary](#26-key-concepts-glossary)
 27. [Common Questions](#27-common-questions)
 
@@ -442,7 +442,7 @@ result = llm.complete("What type of document is this? ...")
 
 ---
 
-## 8. 🔲 NEXT — Step 3: Document Loader
+## 8. ✅ DONE — Step 3: Document Loader
 
 **File:** `graph_rag/core/loader.py` (to be built)
 
@@ -488,7 +488,7 @@ assert text[line_offsets[4]:line_offsets[4]+len(lines[4])] == lines[4]
 
 ---
 
-## 9. 🔲 UPCOMING — Step 4: Document Classifier
+## 9. ✅ DONE — Step 4: Document Classifier
 
 **File:** `graph_rag/extraction/classifier.py` (to be built)
 
@@ -525,7 +525,7 @@ identify its type. Using the full document wastes tokens and time.
 
 ---
 
-## 10. 🔲 UPCOMING — Step 5: LangChain Extractor
+## 10. ✅ DONE — Step 5: LangChain Extractor
 
 **File:** `graph_rag/extraction/langchain_extractor.py` (to be built)
 
@@ -572,7 +572,7 @@ Document (with line numbers):
 
 ---
 
-## 11. 🔲 UPCOMING — Step 6: UiPath Extractor
+## 11. ✅ DONE — Step 6: UiPath Extractor
 
 **File:** `graph_rag/extraction/uipath_extractor.py` (to be built)
 
@@ -608,7 +608,7 @@ entity.extractor_model   = "uipath-document-understanding"
 
 ---
 
-## 12. 🔲 UPCOMING — Step 7: Embedding Engine
+## 12. ✅ DONE — Step 7: Embedding Engine
 
 **File:** `graph_rag/core/embeddings.py` (to be built)
 
@@ -649,7 +649,7 @@ We cache by SHA-256 hash of the input text.
 
 ---
 
-## 13. 🔲 UPCOMING — Step 8: Knowledge Graph Builder
+## 13. ✅ DONE — Step 8: Knowledge Graph Builder
 
 **File:** `graph_rag/core/graph_builder.py` (to be built)
 
@@ -724,7 +724,7 @@ Edges:
 
 ---
 
-## 14. 🔲 UPCOMING — Step 9: Entity Resolver
+## 14. ✅ DONE — Step 9: Entity Resolver
 
 **File:** `graph_rag/core/resolver.py` (to be built)
 
@@ -771,7 +771,7 @@ but semantic_score brings it below 0.60, so no false link.
 
 ---
 
-## 15. 🔲 UPCOMING — Step 10: Contradiction Detector
+## 15. ✅ DONE — Step 10: Contradiction Detector
 
 **File:** `graph_rag/core/contradiction.py` (to be built)
 
@@ -807,7 +807,7 @@ MINOR_KEYS    = {"address", "phone", "email"}
 
 ---
 
-## 16. 🔲 UPCOMING — Step 11: Temporal Filter
+## 16. ✅ DONE — Step 11: Temporal Filter
 
 **File:** `graph_rag/core/temporal.py` (to be built)
 
@@ -839,7 +839,7 @@ same_as edge: valid_from = "2015-06-10", valid_until = "2022-02-28"
 
 ---
 
-## 17. 🔲 UPCOMING — Step 12: Multi-hop Traversal
+## 17. ✅ DONE — Step 12: Multi-hop Traversal
 
 **File:** `graph_rag/query/traversal.py` (to be built)
 
@@ -877,7 +877,7 @@ This prevents infinite loops on circular graphs.
 
 ---
 
-## 18. 🔲 UPCOMING — Step 13: Context Aggregator
+## 18. ✅ DONE — Step 13: Context Aggregator
 
 **File:** `graph_rag/query/aggregator.py` (to be built)
 
@@ -903,7 +903,7 @@ we keep the top 5 by relevance score.
 
 ---
 
-## 19. 🔲 UPCOMING — Step 14: Provenance Tracker
+## 19. ✅ DONE — Step 14: Provenance Tracker
 
 **File:** `graph_rag/query/provenance.py` (to be built)
 
@@ -943,7 +943,7 @@ print(entries[0].source_filename, "line", entries[0].line_number)
 
 ---
 
-## 20. 🔲 UPCOMING — Step 15: Query Engine
+## 20. ✅ DONE — Step 15: Query Engine
 
 **File:** `graph_rag/query/engine.py` (to be built)
 
@@ -977,7 +977,7 @@ for p in result.provenance:
 
 ---
 
-## 21. 🔲 UPCOMING — Step 16: FastAPI REST API
+## 21. ✅ DONE — Step 16: FastAPI REST API
 
 **File:** `graph_rag/api/app.py` (to be built)
 
@@ -1014,7 +1014,7 @@ curl -X POST http://localhost:8000/query \
 
 ---
 
-## 22. 🔲 UPCOMING — Step 17: CLI
+## 22. ✅ DONE — Step 17: CLI
 
 **File:** `graph_rag.py` (to be built, replaces the stub `rag.py`)
 
@@ -1044,7 +1044,7 @@ python graph_rag.py stats
 
 ---
 
-## 23. 🔲 UPCOMING — Step 18: Graph Visualizer
+## 23. ✅ DONE — Step 18: Graph Visualizer
 
 **File:** `graph_rag/visualization/visualizer.py` (to be built)
 
@@ -1075,7 +1075,7 @@ in any browser — drag nodes, zoom, click for details.
 
 ---
 
-## 24. 🔲 UPCOMING — Step 19: React Frontend
+## 24. ✅ DONE — Step 19: React Frontend
 
 **Directory:** `frontend/` (to be built)
 
@@ -1123,7 +1123,7 @@ The file upload then accepts `.txt` (LangChain) or `.json` (UiPath) accordingly.
 
 ---
 
-## 25. 🔲 UPCOMING — Step 20: Tests
+## 25. ✅ DONE — Step 20: Tests
 
 **Directory:** `tests/` (to be built)
 
