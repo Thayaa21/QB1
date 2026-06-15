@@ -101,12 +101,15 @@ const QueryPanel: React.FC<QueryPanelProps> = ({ onResult }) => {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ question: q, max_hops: maxHops, temporal_context: temporalContext }),
       });
-      const data: SmartQueryResponse = await resp.json();
+      const data = await resp.json();
       if (!resp.ok) throw new Error((data as unknown as { detail: string }).detail || 'Query failed');
-      setSmartResult(data);
+      // Validate response has expected shape
+      if (!data || typeof data !== 'object') throw new Error('Invalid response from server');
+      setSmartResult(data as SmartQueryResponse);
       onResult(data);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Query failed');
+      setError(e instanceof Error ? e.message : 'Query failed. Check console.');
+      console.error('Smart query error:', e);
     } finally {
       setLoading(false);
     }
@@ -160,7 +163,7 @@ const QueryPanel: React.FC<QueryPanelProps> = ({ onResult }) => {
       {error && <div style={S.error}>✗ {error}</div>}
 
       {/* Results */}
-      {smartResult && (
+      {smartResult && smartResult.type && (
         <div style={S.resultBox}>
 
           {/* Disambiguation — multiple people found */}

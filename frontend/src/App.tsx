@@ -155,16 +155,8 @@ const App: React.FC = () => {
 
         {/* Right: query + results */}
         <div style={S.col}>
-          <QueryPanel onResult={setQueryResult} />
-          {queryResult && (
-            <>
-              <AnswerDisplay result={queryResult} />
-              {queryResult.has_conflicts && (
-                <ConflictWarnings conflicts={queryResult.conflicts} />
-              )}
-              <ProvenanceList entries={queryResult.provenance} />
-            </>
-          )}
+          <QueryPanel onResult={() => {}} />
+          {/* Results are shown inline in QueryPanel now */}
         </div>
       </div>
 
