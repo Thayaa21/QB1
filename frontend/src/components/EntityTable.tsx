@@ -1,167 +1,110 @@
 /**
- * EntityTable — displays all entity nodes in the graph as a sortable table.
- *
- * Fetches from GET /entities and displays name, type, doc, confidence.
+ * EntityTable — compact collapsible entity list.
+ * Collapsed by default, shows count. Click to expand.
  */
 
 import React, { useEffect, useState } from 'react';
 import { getEntities } from '../api/client';
 import type { EntityNode } from '../types';
 
-interface EntityTableProps {
-  refreshTrigger?: number;
-}
+interface EntityTableProps { refreshTrigger?: number; }
 
-const styles: Record<string, React.CSSProperties> = {
+const S: Record<string, React.CSSProperties> = {
   container: {
     background:   '#1e1e2e',
     border:       '1px solid #333',
     borderRadius: '8px',
-    padding:      '16px',
-    overflowX:    'auto',
+    overflow:     'hidden',
   },
-  title: {
-    color:        '#eee',
-    fontSize:     '15px',
-    fontWeight:   600,
-    marginBottom: '12px',
-    display:      'flex',
-    gap:          '8px',
-    alignItems:   'center',
+  header: {
+    display:        'flex',
+    alignItems:     'center',
+    gap:            '8px',
+    padding:        '10px 14px',
+    cursor:         'pointer',
+    userSelect:     'none' as const,
+    borderBottom:   '1px solid #2a2a3e',
   },
-  count: {
-    background:   '#2a2a3e',
-    color:        '#888',
-    borderRadius: '10px',
-    padding:      '1px 8px',
-    fontSize:     '12px',
-  },
-  table: {
-    width:           '100%',
-    borderCollapse:  'collapse',
-    fontSize:        '13px',
-  },
-  th: {
-    background:   '#2a2a3e',
-    color:        '#aaa',
-    padding:      '8px 12px',
-    textAlign:    'left' as const,
-    border:       '1px solid #333',
-    fontWeight:   600,
-    whiteSpace:   'nowrap',
-  },
-  td: {
-    color:   '#ccc',
-    padding: '7px 12px',
-    border:  '1px solid #2a2a3e',
-  },
-  badge: (type: string): React.CSSProperties => {
-    const colors: Record<string, string> = {
-      PERSON:       '#4A90D9',
-      ORGANIZATION: '#E74C3C',
-      LOCATION:     '#1ABC9C',
-      ID_NUMBER:    '#E67E22',
-      DATE:         '#9B59B6',
-    };
-    return {
-      background:   colors[type] || '#555',
-      color:        'white',
-      borderRadius: '3px',
-      padding:      '2px 6px',
-      fontSize:     '11px',
-    };
-  },
-  empty: {
-    color:    '#555',
-    fontSize: '13px',
-    textAlign: 'center' as const,
-    padding:  '20px',
-  },
+  title:  { color: '#eee', fontSize: '14px', fontWeight: 600, flex: 1 },
+  count:  { background: '#2a2a3e', color: '#888', borderRadius: '10px', padding: '1px 8px', fontSize: '12px' },
+  chevron: (open: boolean) => ({ color: '#555', fontSize: '12px', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }),
+  body:   { padding: '8px 12px' },
   search: {
-    background:   '#0d0d1a',
-    color:        '#ddd',
-    border:       '1px solid #444',
-    borderRadius: '4px',
-    padding:      '5px 10px',
-    fontSize:     '13px',
-    marginBottom: '10px',
-    width:        '200px',
+    background: '#0d0d1a', color: '#ddd', border: '1px solid #444',
+    borderRadius: '4px', padding: '5px 8px', fontSize: '12px',
+    width: '100%', marginBottom: '8px', boxSizing: 'border-box' as const,
   },
+  scroll: { maxHeight: '180px', overflowY: 'auto' as const },
+  row: {
+    display: 'flex', alignItems: 'center', gap: '6px',
+    padding: '4px 0', borderBottom: '1px solid #1a1a2e', fontSize: '12px',
+  },
+  name:   { color: '#4A90D9', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+  badge: (type: string): React.CSSProperties => {
+    const c: Record<string, string> = { PERSON: '#4A90D9', ORGANIZATION: '#E74C3C', LOCATION: '#1ABC9C', ID_NUMBER: '#E67E22', DATE: '#9B59B6' };
+    return { background: c[type] || '#555', color: '#fff', borderRadius: '3px', padding: '1px 5px', fontSize: '10px', flexShrink: 0 };
+  },
+  file:   { color: '#666', fontSize: '10px', flexShrink: 0, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+  empty:  { color: '#555', fontSize: '12px', padding: '12px', textAlign: 'center' as const },
 };
 
 const EntityTable: React.FC<EntityTableProps> = ({ refreshTrigger = 0 }) => {
-  const [entities, setEntities]   = useState<EntityNode[]>([]);
-  const [loading,  setLoading]    = useState(false);
-  const [filter,   setFilter]     = useState('');
+  const [entities, setEntities] = useState<EntityNode[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [filter,   setFilter]   = useState('');
+  const [open,     setOpen]     = useState(false);
 
   useEffect(() => {
-    const fetch = async () => {
+    const load = async () => {
       setLoading(true);
       try {
-        const result = await getEntities();
-        setEntities(result.entities);
-      } catch (err) {
-        console.error('Failed to load entities:', err);
-      } finally {
-        setLoading(false);
-      }
+        const r = await getEntities();
+        setEntities(r.entities);
+      } catch { /* ignore */ }
+      setLoading(false);
     };
-    fetch();
+    load();
   }, [refreshTrigger]);
 
-  const filtered = entities.filter(
-    (e) =>
-      e.name.toLowerCase().includes(filter.toLowerCase()) ||
-      e.source_filename.toLowerCase().includes(filter.toLowerCase())
+  const filtered = entities.filter(e =>
+    !filter ||
+    e.name.toLowerCase().includes(filter.toLowerCase()) ||
+    e.source_filename.toLowerCase().includes(filter.toLowerCase())
   );
 
   return (
-    <div style={styles.container}>
-      <div style={styles.title}>
-        👥 Entities
-        <span style={styles.count}>{entities.length}</span>
+    <div style={S.container}>
+      <div style={S.header} onClick={() => setOpen(o => !o)}>
+        <span style={S.chevron(open)}>▶</span>
+        <span style={S.title}>👥 Entities</span>
+        <span style={S.count}>{entities.length}</span>
       </div>
-      <input
-        style={styles.search}
-        placeholder="Filter by name..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
-      {loading ? (
-        <div style={styles.empty}>Loading entities...</div>
-      ) : filtered.length === 0 ? (
-        <div style={styles.empty}>
-          {entities.length === 0
-            ? 'No entities yet. Ingest documents first.'
-            : 'No entities match the filter.'}
+
+      {open && (
+        <div style={S.body}>
+          <input
+            style={S.search}
+            placeholder="Filter..."
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            onClick={e => e.stopPropagation()}
+          />
+          {loading ? (
+            <div style={S.empty}>Loading...</div>
+          ) : filtered.length === 0 ? (
+            <div style={S.empty}>{entities.length === 0 ? 'Ingest documents first.' : 'No match.'}</div>
+          ) : (
+            <div style={S.scroll}>
+              {filtered.map(e => (
+                <div key={e.node_id} style={S.row}>
+                  <span style={S.name} title={e.name}>{e.name}</span>
+                  <span style={S.badge(e.entity_type)}>{e.entity_type}</span>
+                  <span style={S.file} title={e.source_filename}>{e.source_filename}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      ) : (
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>Type</th>
-              <th style={styles.th}>Source File</th>
-              <th style={styles.th}>Confidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((entity) => (
-              <tr key={entity.node_id}>
-                <td style={styles.td}>{entity.name}</td>
-                <td style={styles.td}>
-                  <span style={styles.badge(entity.entity_type)}>
-                    {entity.entity_type}
-                  </span>
-                </td>
-                <td style={styles.td}>{entity.source_filename}</td>
-                <td style={styles.td}>
-                  {(entity.confidence * 100).toFixed(0)}%
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
     </div>
   );

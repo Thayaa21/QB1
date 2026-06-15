@@ -303,8 +303,19 @@ class GraphVisualizer:
                     )
 
                 else:
-                    # Unknown edge type — render as thin grey line
-                    net.add_edge(source, target, color="#555555", width=1)
+                    # lives_with or unknown edge type
+                    if edge_type == "lives_with":
+                        address = data.get("address", "")
+                        net.add_edge(
+                            source, target,
+                            title  = f"lives_with: {address}",
+                            label  = "🏠",
+                            color  = "#1ABC9C",
+                            dashes = True,
+                            width  = 2,
+                        )
+                    else:
+                        net.add_edge(source, target, color="#555555", width=1)
 
             # ---- Write HTML ----
             net.write_html(output_path)
